@@ -14,6 +14,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type MarkerRow = {
   id: string;
+  memberId: string;
+  color?: string;
   placeName: string;
   lng: number;
   lat: number;
@@ -60,6 +62,9 @@ export const api = {
   getRoom(roomCode: string) {
     return req<{ id: string; code: string; name?: string; status: string; timezone: string }>(`/rooms/${roomCode}`);
   },
+  listMembers(roomCode: string) {
+    return req<Array<{ id: string; nickname: string; color: string; role: string }>>(`/rooms/${roomCode}/members`);
+  },
   listMarkers(roomId: string) {
     return req<MarkerRow[]>(`/rooms/${roomId}/markers`);
   },
@@ -78,6 +83,12 @@ export const api = {
   }) {
     return req(`/rooms/${roomId}/markers`, {
       method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  deleteMarker(markerId: string, payload: { memberId: string }) {
+    return req<{ markerId: string }>(`/markers/${markerId}`, {
+      method: "DELETE",
       body: JSON.stringify(payload)
     });
   },

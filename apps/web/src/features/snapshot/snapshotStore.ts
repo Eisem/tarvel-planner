@@ -9,6 +9,7 @@ export interface DraftSnapshot {
   roomCode: string;
   title: string;
   sourcePlanId?: string;
+  dayCount?: number;
   planItems: PlanItemDraft[];
   createdAt: string;
   updatedAt: string;
@@ -40,6 +41,7 @@ export function createDraft(roomCode: string, title?: string): DraftSnapshot {
     id: crypto.randomUUID(),
     roomCode,
     title: title ?? `方案 ${new Date().toLocaleString("zh-CN")}`,
+    dayCount: 3,
     planItems: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()

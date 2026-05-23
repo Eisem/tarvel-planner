@@ -110,9 +110,17 @@ export async function createMarker(input: MarkerInput) {
 export async function listMarkers(roomId: string, memberId?: string) {
   const rows = await prisma.marker.findMany({
     where: { roomId, ...(memberId ? { memberId } : {}) },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    include: { member: { select: { color: true } } }
   });
-  return rows.map((m) => ({ ...m, lng: toNumber(m.lng), lat: toNumber(m.lat) }));
+  return rows.map((m) => {
+    const { member, ...rest } = m;
+    return { ...rest, lng: toNumber(rest.lng), lat: toNumber(rest.lat), color: member.color };
+  });
+}
+
+export async function deleteMarker(markerId: string) {
+  return prisma.marker.delete({ where: { id: markerId } });
 }
 
 export async function updateMarker(markerId: string, patch: Partial<MarkerInput>) {

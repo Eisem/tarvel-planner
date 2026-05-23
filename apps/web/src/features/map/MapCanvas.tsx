@@ -25,6 +25,8 @@ interface MapObj {
 
 interface Props {
   markers: MarkerRow[];
+  draftMarker?: { lng: number; lat: number } | null;
+  draftMarkerColor?: string;
   onMapReady: (mapInstance: MapObj) => void;
   onMapClick: (lng: number, lat: number, address: string) => void;
   onMarkerClick: (marker: MarkerRow) => void;
@@ -41,11 +43,17 @@ const win = window as unknown as {
   }
 };
 
-export function MapCanvas({ markers, onMapReady, onMapClick, onMarkerClick }: Props) {
+function markerIcon(color: string) {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='34' viewBox='0 0 24 34'><path fill='${color}' d='M12 0C5.373 0 0 5.33 0 11.906c0 8.633 12 22.094 12 22.094s12-13.461 12-22.094C24 5.33 18.627 0 12 0z'/><circle cx='12' cy='12' r='4.8' fill='white'/></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, onMapClick, onMarkerClick }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<MapObj | null>(null);
   const makerRef = useRef<Map<string, InstanceType<typeof win.AMap.Marker>>>(new Map());
   const infoWindowRef = useRef<InstanceType<typeof win.AMap.InfoWindow> | null>(null);
+  const draftMarkerRef = useRef<InstanceType<typeof win.AMap.Marker> | null>(null);
 
   function escapeText(v: string | number | undefined) {
     if (v === undefined || v === null) return "-";
@@ -106,7 +114,7 @@ export function MapCanvas({ markers, onMapReady, onMapClick, onMarkerClick }: Pr
     makerRef.current.forEach((m) => m.setMap(null));
     makerRef.current.clear();
     markers.forEach((row) => {
-      const mk = new win.AMap.Marker({ position: [row.lng, row.lat], title: row.placeName });
+      const mk = new win.AMap.Marker({ position: [row.lng, row.lat], title: row.placeName, icon: markerIcon(row.color ?? "#3b82f6") });
       mk.setMap(map);
       mk.on("click", () => {
         onMarkerClick(row);
@@ -115,6 +123,19 @@ export function MapCanvas({ markers, onMapReady, onMapClick, onMarkerClick }: Pr
       makerRef.current.set(row.id, mk);
     });
   }, [markers]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    if (draftMarkerRef.current) {
+      draftMarkerRef.current.setMap(null);
+      draftMarkerRef.current = null;
+    }
+    if (!draftMarker) return;
+    const mk = new win.AMap.Marker({ position: [draftMarker.lng, draftMarker.lat], title: "待保存标点", icon: markerIcon(draftMarkerColor ?? "#ef4444") });
+    mk.setMap(map);
+    draftMarkerRef.current = mk;
+  }, [draftMarker, draftMarkerColor]);
 
   return <div className="amap-canvas workbench-map" ref={mapRef} />;
 }
