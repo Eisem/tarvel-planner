@@ -323,7 +323,10 @@ export function WorkbenchPage() {
           <p className="room-code">房间码：{roomCode}</p>
           <h1>Group Trip Workspace</h1>
         </div>
-        <Link className="btn" to="/">返回首页</Link>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}`}>投票</Link>
+          <Link className="btn" to="/">返回首页</Link>
+        </div>
       </header>
 
       {loading ? <p className="page-note wb-message">加载中...</p> : null}

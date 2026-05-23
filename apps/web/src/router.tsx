@@ -2,6 +2,7 @@ import { Link, Route, Routes, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { api } from "./services/api";
 import { WorkbenchPage } from "./features/workbench/WorkbenchPage";
+import { VotingPage } from "./features/voting/VotingPage";
 import type { ReactNode } from "react";
 
 const quickStats = [
@@ -120,6 +121,7 @@ export function AppRouter() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/rooms/:roomCode/workbench" element={<WorkbenchPage />} />
+      <Route path="/rooms/:roomCode/vote" element={<VotingPage />} />
     </Routes>
   );
 }

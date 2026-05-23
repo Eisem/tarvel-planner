@@ -193,14 +193,20 @@ export async function updatePlanItem(id: string, patch: Partial<PlanItemInput>) 
 
 export async function vote(roomId: string, planId: string, memberId: string) {
   return prisma.vote.upsert({
-    where: { roomId_memberId: { roomId, memberId } },
-    update: { planId },
+    where: { planId_memberId: { planId, memberId } },
+    update: {},
     create: { roomId, planId, memberId }
   });
 }
 
-export async function listVotes(roomId: string) {
-  return prisma.vote.findMany({ where: { roomId } });
+export async function unvote(planId: string, memberId: string) {
+  return prisma.vote.delete({
+    where: { planId_memberId: { planId, memberId } }
+  });
+}
+
+export async function listVotes(roomId: string, memberId?: string) {
+  return prisma.vote.findMany({ where: { roomId, ...(memberId ? { memberId } : {}) } });
 }
 
 export async function listMembers(roomId: string) {

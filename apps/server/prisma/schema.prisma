@@ -143,5 +143,5 @@ model Vote {
 
   @@index([roomId])
   @@index([planId])
-  @@unique([roomId, memberId])
+  @@unique([planId, memberId])
 }

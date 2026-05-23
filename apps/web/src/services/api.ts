@@ -125,7 +125,16 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
+  unvotePlan(planId: string, payload: { memberId: string }) {
+    return req(`/plans/${planId}/vote`, {
+      method: "DELETE",
+      body: JSON.stringify(payload)
+    });
+  },
+  listMyVotes(roomId: string, memberId: string) {
+    return req<string[]>(`/rooms/${roomId}/my-votes?memberId=${memberId}`);
+  },
   getVoteResult(roomId: string) {
-    return req<Array<{ planId: string; title: string; voteCount: number; isBest: boolean; isTied: boolean }>>(`/rooms/${roomId}/vote-result`);
+    return req<{ memberCount: number; plans: Array<{ planId: string; title: string; voteCount: number; isBest: boolean; isTied: boolean }> }>(`/rooms/${roomId}/vote-result`);
   }
 };
