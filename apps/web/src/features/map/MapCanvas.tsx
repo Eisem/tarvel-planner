@@ -38,6 +38,7 @@ const win = window as unknown as {
     ToolBar: new () => unknown;
     Geocoder: new () => { getAddress: (pos: number[], cb: (s: string, r: Record<string, unknown>) => void) => void };
     Marker: new (o: Record<string, unknown>) => { setMap: (m: unknown) => void; on: (e: string, fn: () => void) => void; getPosition: () => unknown };
+    Pixel: new (x: number, y: number) => unknown;
     InfoWindow: new (o: Record<string, unknown>) => { setContent: (c: string) => void; open: (m: unknown, p: unknown) => void };
     PlaceSearch: new (o: Record<string, unknown>) => { search: (kw: string, cb: (s: string, r: Record<string, unknown>) => void) => void };
   }
@@ -117,7 +118,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
     makerRef.current.forEach((m) => m.setMap(null));
     makerRef.current.clear();
     markers.forEach((row) => {
-      const mk = new win.AMap.Marker({ position: [row.lng, row.lat], title: row.placeName, icon: markerIcon(row.color ?? "#3b82f6") });
+      const mk = new win.AMap.Marker({ position: [row.lng, row.lat], title: row.placeName, icon: markerIcon(row.color ?? "#3b82f6"), offset: new win.AMap.Pixel(-12, -34) });
       mk.setMap(map);
       mk.on("click", () => {
         onMarkerClick(row);
@@ -135,7 +136,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
       draftMarkerRef.current = null;
     }
     if (!draftMarker) return;
-    const mk = new win.AMap.Marker({ position: [draftMarker.lng, draftMarker.lat], title: "待保存标点", icon: markerIcon(draftMarkerColor ?? "#ef4444") });
+    const mk = new win.AMap.Marker({ position: [draftMarker.lng, draftMarker.lat], title: "待保存标点", icon: markerIcon(draftMarkerColor ?? "#ef4444"), offset: new win.AMap.Pixel(-12, -34) });
     mk.setMap(map);
     draftMarkerRef.current = mk;
   }, [draftMarker, draftMarkerColor]);
