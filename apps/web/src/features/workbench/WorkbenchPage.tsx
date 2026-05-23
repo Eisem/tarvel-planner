@@ -17,7 +17,8 @@ type DraftForm = {
   note?: string;
 };
 
-const DAYS = [1, 2, 3, 4, 5, 6, 7];
+const MIN_DAYS = 1;
+const MAX_DAYS = 14;
 
 export function WorkbenchPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -26,6 +27,7 @@ export function WorkbenchPage() {
   const queryMemberId = search.get("memberId") ?? "";
   const storageKey = useMemo(() => (roomCode ? `tp_member_${roomCode}` : ""), [roomCode]);
   const [memberId, setMemberId] = useState("");
+  const [memberColor, setMemberColor] = useState<string>("#ef4444");
   const [roomId, setRoomId] = useState("");
 
   const [loading, setLoading] = useState(true);
@@ -36,14 +38,19 @@ export function WorkbenchPage() {
 
   const [markers, setMarkers] = useState<MarkerRow[]>([]);
   const [selectedMarkerId, setSelectedMarkerId] = useState("");
+  const [selectedForSnapshot, setSelectedForSnapshot] = useState<string[]>([]);
   const [draftForm, setDraftForm] = useState<DraftForm | null>(null);
   const [drafts, setDrafts] = useState<DraftSnapshot[]>([]);
   const [activeDraftId, setActiveDraftId] = useState("");
   const [sharedPlans, setSharedPlans] = useState<Array<{ id: string; title: string; creatorMemberId: string }>>([]);
+  const [previewShared, setPreviewShared] = useState<{ planId: string; title: string; items: PlanItemDraft[] } | null>(null);
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
+  const [placeListExpanded, setPlaceListExpanded] = useState(true);
 
   const mapInstanceRef = useRef<unknown>(null);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
+  const activeDayCount = activeDraft?.dayCount ?? 3;
+  const dayIndexes = useMemo(() => Array.from({ length: activeDayCount }, (_, idx) => idx + 1), [activeDayCount]);
 
   const draftItemsByDay = useMemo(() => {
     const grouped = new Map<number, PlanItemDraft[]>();
@@ -85,6 +92,13 @@ export function WorkbenchPage() {
         const room = await api.getRoom(roomCode);
         if (disposed) return;
         setRoomId(room.id);
+        if (memberId) {
+          const members = await api.listMembers(roomCode);
+          const self = members.find((member) => member.id === memberId);
+          if (self?.color) {
+            setMemberColor(self.color);
+          }
+        }
         setDrafts(loadDrafts(roomCode));
         await Promise.all([refreshMarkers(room.id), refreshSharedPlans(room.id)]);
       } catch (e) {
@@ -97,7 +111,7 @@ export function WorkbenchPage() {
     return () => {
       disposed = true;
     };
-  }, [roomCode, refreshMarkers, refreshSharedPlans]);
+  }, [roomCode, memberId, refreshMarkers, refreshSharedPlans]);
 
   useEffect(() => {
     if (!roomCode || !memberId) return;
@@ -143,12 +157,18 @@ export function WorkbenchPage() {
       setError("请先在地图上添加地点后再创建快照");
       return;
     }
+    const picked = markers.filter((marker) => selectedForSnapshot.includes(marker.id));
+    if (picked.length === 0) {
+      setError("请选择至少一个地点加入快照");
+      return;
+    }
     const draft = createDraft(roomCode, `快照 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
-    draft.planItems = markers.slice(0, 32).map((marker, index) => ({ markerId: marker.id, dayIndex: 1, orderIndex: index + 1 }));
+    draft.planItems = picked.slice(0, 60).map((marker, index) => ({ markerId: marker.id, dayIndex: 1, orderIndex: index + 1 }));
     const next = [draft, ...drafts];
     persistDrafts(next);
     setActiveDraftId(draft.id);
     setLeftTab("snapshots");
+    setSelectedForSnapshot([]);
     setError("");
   }
 
@@ -165,6 +185,48 @@ export function WorkbenchPage() {
     if (activeDraftId === id) {
       setActiveDraftId(next[0]?.id ?? "");
     }
+  }
+
+  function toggleMarkerForSnapshot(markerId: string) {
+    setSelectedForSnapshot((prev) => {
+      if (prev.includes(markerId)) {
+        return prev.filter((id) => id !== markerId);
+      }
+      return [...prev, markerId];
+    });
+  }
+
+  function selectAllForSnapshot() {
+    setSelectedForSnapshot(markers.map((marker) => marker.id));
+  }
+
+  function invertSelectedForSnapshot() {
+    const selectedSet = new Set(selectedForSnapshot);
+    setSelectedForSnapshot(markers.filter((marker) => !selectedSet.has(marker.id)).map((marker) => marker.id));
+  }
+
+  function updateDayCount(nextDayCount: number) {
+    if (!activeDraft) return;
+    const bounded = Math.max(MIN_DAYS, Math.min(MAX_DAYS, nextDayCount));
+    updateActiveDraft((draft) => {
+      const remapped = draft.planItems.map((item) => ({
+        ...item,
+        dayIndex: Math.min(item.dayIndex, bounded)
+      }));
+      const grouped = new Map<number, PlanItemDraft[]>();
+      remapped.forEach((item) => {
+        const list = grouped.get(item.dayIndex) ?? [];
+        list.push(item);
+        grouped.set(item.dayIndex, list);
+      });
+      const normalized: PlanItemDraft[] = [];
+      grouped.forEach((list, day) => {
+        list
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .forEach((item, idx) => normalized.push({ ...item, dayIndex: day, orderIndex: idx + 1 }));
+      });
+      return { ...draft, dayCount: bounded, planItems: normalized };
+    });
   }
 
   function handleDropOnDay(markerId: string, dayIndex: number) {
@@ -223,6 +285,20 @@ export function WorkbenchPage() {
       setError(e instanceof Error ? e.message : "保存标点失败");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteMarker(markerId: string) {
+    if (!memberId || !roomId) return;
+    try {
+      setError("");
+      await api.deleteMarker(markerId, { memberId });
+      await refreshMarkers(roomId);
+      if (selectedMarkerId === markerId) {
+        setSelectedMarkerId("");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除标点失败");
     }
   }
 
@@ -293,6 +369,7 @@ export function WorkbenchPage() {
         roomCode,
         title: `${plan?.title || "共享方案"} 副本`,
         sourcePlanId: planId,
+        dayCount: 3,
         planItems: normalized,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -309,9 +386,31 @@ export function WorkbenchPage() {
     }
   }
 
+  async function previewSharedPlan(planId: string) {
+    try {
+      const source = sharedPlans.find((plan) => plan.id === planId);
+      const items = await api.listPlanItems(planId);
+      const normalized = items.map((item) => ({ markerId: item.markerId, dayIndex: item.dayIndex, orderIndex: item.orderIndex }));
+      setPreviewShared({ planId, title: source?.title ?? "共享方案", items: normalized });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "加载预览失败");
+    }
+  }
+
   function getMarkerName(markerId: string) {
     return markers.find((marker) => marker.id === markerId)?.placeName ?? "(已失效地点)";
   }
+
+  const previewItemsByDay = useMemo(() => {
+    const grouped = new Map<number, PlanItemDraft[]>();
+    if (!previewShared) return grouped;
+    previewShared.items.forEach((item) => {
+      const list = grouped.get(item.dayIndex) ?? [];
+      list.push(item);
+      grouped.set(item.dayIndex, list.sort((a, b) => a.orderIndex - b.orderIndex));
+    });
+    return grouped;
+  }, [previewShared]);
 
   return (
     <div className="app-bg workbench-shell">
@@ -335,7 +434,10 @@ export function WorkbenchPage() {
           </p>
           <h1>Group Trip Workspace</h1>
         </div>
-        <Link className="btn" to="/">返回首页</Link>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}`}>投票</Link>
+          <Link className="btn" to="/">返回首页</Link>
+        </div>
       </header>
 
       {loading ? <p className="page-note wb-message">加载中...</p> : null}
@@ -354,6 +456,14 @@ export function WorkbenchPage() {
                 <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：东京塔" />
                 <button className="btn btn-primary btn-sm" disabled={searching} onClick={handleSearch}>{searching ? "搜索中" : "搜索"}</button>
               </div>
+
+              <div className="row-btns">
+                <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>保存勾选地点为快照</button>
+                <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
+                <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
+                <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
+              </div>
+              <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
 
               {draftForm ? (
                 <div className="draft-box">
@@ -375,31 +485,43 @@ export function WorkbenchPage() {
               <ul className="marker-list-inner">
                 {markers.map((marker) => (
                   <li key={marker.id}>
-                    <button
-                      className={selectedMarkerId === marker.id ? "marker-item active" : "marker-item"}
-                      draggable
-                      onDragStart={(event) => event.dataTransfer.setData("markerId", marker.id)}
-                      onClick={() => {
-                        setSelectedMarkerId(marker.id);
-                        const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
-                        if (map) {
-                          map.setCenter([marker.lng, marker.lat]);
-                          map.setZoom(14);
-                        }
-                      }}
-                    >
-                      <strong>{marker.placeName}</strong>
-                      <span>预算：{marker.budget ?? "-"}</span>
-                      <small>{marker.lng.toFixed(4)}, {marker.lat.toFixed(4)}</small>
-                    </button>
+                    <div className={selectedMarkerId === marker.id ? "marker-item active" : "marker-item"}>
+                      <label className="marker-check">
+                        <input
+                          type="checkbox"
+                          checked={selectedForSnapshot.includes(marker.id)}
+                          onChange={() => toggleMarkerForSnapshot(marker.id)}
+                        />
+                        <span>加入快照</span>
+                      </label>
+                      <button
+                        className="marker-focus"
+                        draggable
+                        onDragStart={(event) => event.dataTransfer.setData("markerId", marker.id)}
+                        onClick={() => {
+                          setSelectedMarkerId(marker.id);
+                          const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
+                          if (map) {
+                            map.setCenter([marker.lng, marker.lat]);
+                            map.setZoom(14);
+                          }
+                        }}
+                      >
+                        <strong>{marker.placeName}</strong>
+                        <span>预算：{marker.budget ?? "-"}</span>
+                        <span>创建者：{marker.memberId === memberId ? "我" : marker.memberId.slice(0, 6)}</span>
+                        <small>{marker.lng.toFixed(4)}, {marker.lat.toFixed(4)}</small>
+                      </button>
+                      {marker.memberId === memberId ? (
+                        <button className="btn btn-sm" onClick={() => deleteMarker(marker.id)}>删除</button>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
             </div>
           ) : (
             <div className="wb-panel">
-              <button className="btn btn-primary" onClick={createSnapshotFromMarkers}>保存地点池为方案快照</button>
-
               <h4>本地快照（{drafts.length}）</h4>
               <div className="draft-cards">
                 {drafts.map((draft) => (
@@ -422,10 +544,32 @@ export function WorkbenchPage() {
                   <article key={plan.id} className="draft-card">
                     <strong>{plan.title}</strong>
                     <small>创建者：{plan.creatorMemberId}</small>
-                    <button className="btn btn-sm" onClick={() => copySharedToLocal(plan.id)}>复制到本地编辑</button>
+                    <div className="row-btns">
+                      <button className="btn btn-sm" onClick={() => previewSharedPlan(plan.id)}>预览</button>
+                      <button className="btn btn-sm" onClick={() => copySharedToLocal(plan.id)}>复制到本地编辑</button>
+                    </div>
                   </article>
                 ))}
               </div>
+
+              {previewShared ? (
+                <div className="shared-preview">
+                  <div className="row-btns">
+                    <strong>{previewShared.title} 预览</strong>
+                    <button className="btn btn-sm" onClick={() => setPreviewShared(null)}>关闭预览</button>
+                  </div>
+                  <div className="shared-preview-days">
+                    {Array.from(previewItemsByDay.keys()).sort((a, b) => a - b).map((day) => (
+                      <section key={day} className="shared-day">
+                        <p>第{day}天</p>
+                        {(previewItemsByDay.get(day) ?? []).map((item) => (
+                          <small key={`${item.markerId}-${item.dayIndex}-${item.orderIndex}`}>{item.orderIndex}. {getMarkerName(item.markerId)}</small>
+                        ))}
+                      </section>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </aside>
@@ -433,6 +577,8 @@ export function WorkbenchPage() {
         <main className="wb-center">
           <MapCanvas
             markers={markers}
+            draftMarker={draftForm ? { lng: draftForm.lng, lat: draftForm.lat } : null}
+            draftMarkerColor={memberColor}
             onMapReady={(map) => {
               mapInstanceRef.current = map;
             }}
@@ -452,39 +598,72 @@ export function WorkbenchPage() {
                 value={activeDraft.title}
                 onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
               />
-              <p className="page-note">拖拽地点卡片到右侧日期列。冲突处理：同一地点重复拖拽会自动移动到新日期。</p>
-              <div className="schedule-grid">
-                {DAYS.map((day) => {
-                  const items = draftItemsByDay.get(day) ?? [];
-                  return (
-                    <div
-                      key={day}
-                      className="day-column"
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        const markerId = event.dataTransfer.getData("markerId");
-                        if (markerId) {
-                          handleDropOnDay(markerId, day);
-                        }
-                      }}
-                    >
-                      <p className="day-label">第{day}天</p>
-                      {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
-                      {items.map((item) => (
-                        <div key={`${item.markerId}-${item.dayIndex}`} className="day-item" data-mid={item.markerId}>
-                          <span>{getMarkerName(item.markerId)}</span>
-                          <div className="row-btns">
-                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
-                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
-                            <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
+              <div className="row-btns">
+                <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
+                <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
+                <p className="page-note">当前 {activeDayCount} 天</p>
               </div>
+              <p className="page-note">左侧展开地点列表后拖到右侧天数列。重复拖拽同地点会自动挪到新日期并保留顺序。</p>
+
+              <div className="planner-layout">
+                <section className="planner-left">
+                  <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
+                    {placeListExpanded ? "收起地点列表" : "展开地点列表"}
+                  </button>
+                  {placeListExpanded ? (
+                    <ul className="planner-place-list">
+                      {markers.map((marker) => (
+                        <li key={marker.id}>
+                          <button
+                            className="planner-place-item"
+                            draggable
+                            onDragStart={(event) => event.dataTransfer.setData("markerId", marker.id)}
+                          >
+                            <span className="drag-chip">DRAG</span>
+                            <strong>{marker.placeName}</strong>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+
+                <section className="planner-right">
+                  <div className="schedule-grid">
+                    {dayIndexes.map((day) => {
+                      const items = draftItemsByDay.get(day) ?? [];
+                      return (
+                        <div
+                          key={day}
+                          className="day-column"
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            const markerId = event.dataTransfer.getData("markerId");
+                            if (markerId) {
+                              handleDropOnDay(markerId, day);
+                            }
+                          }}
+                        >
+                          <p className="day-label">第{day}天</p>
+                          {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
+                          {items.map((item) => (
+                            <div key={`${item.markerId}-${item.dayIndex}`} className="day-item" data-mid={item.markerId}>
+                              <span>{getMarkerName(item.markerId)}</span>
+                              <div className="row-btns">
+                                <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
+                                <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
+                                <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
+
               <div className="row-btns">
                 <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
                 <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除本地草稿</button>

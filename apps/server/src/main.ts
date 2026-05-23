@@ -8,6 +8,7 @@ import {
   createPlan,
   createPlanItem,
   createRoom,
+  deleteMarker,
   getMarkerById,
   getPlanById,
   getPlanItemById,
@@ -19,6 +20,7 @@ import {
   listVotes,
   prisma,
   transitionRoomStatus,
+  unvote,
   updateMarker,
   updatePlanItem,
   vote
@@ -118,6 +120,20 @@ app.patch("/api/v1/markers/:markerId", async (req, res) => {
   res.json(ok(updated));
 });
 
+app.delete("/api/v1/markers/:markerId", async (req, res) => {
+  const parsed = z.object({ memberId: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
+  const marker = await getMarkerById(req.params.markerId);
+  if (!marker) return res.status(404).json(fail("MARKER_NOT_FOUND", "marker not found"));
+  if (marker.memberId !== parsed.data.memberId) {
+    return res.status(403).json(fail("FORBIDDEN_ACTION", "cannot delete marker from other members"));
+  }
+  await deleteMarker(req.params.markerId);
+  const room = await prisma.room.findUnique({ where: { id: marker.roomId } });
+  if (room) io.to(roomChannel(room.code)).emit("marker.deleted", { markerId: req.params.markerId });
+  res.json(ok({ markerId: req.params.markerId }));
+});
+
 app.post("/api/v1/rooms/:roomId/plans", async (req, res) => {
   const parsed = z.object({ creatorMemberId: z.string().min(1), title: z.string().min(1), description: z.string().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
@@ -176,14 +192,38 @@ app.post("/api/v1/plans/:planId/vote", async (req, res) => {
   res.status(201).json(ok(entity));
 });
 
+app.delete("/api/v1/plans/:planId/vote", async (req, res) => {
+  const parsed = z.object({ memberId: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
+  const plan = await getPlanById(req.params.planId);
+  if (!plan) return res.status(404).json(fail("PLAN_NOT_FOUND", "plan not found"));
+  try {
+    await unvote(req.params.planId, parsed.data.memberId);
+  } catch {
+    // already unvoted - fine
+  }
+  const room = await prisma.room.findUnique({ where: { id: plan.roomId } });
+  if (room) io.to(roomChannel(room.code)).emit("vote.updated", { roomId: plan.roomId });
+  res.json(ok({ success: true }));
+});
+
+app.get("/api/v1/rooms/:roomId/my-votes", async (req, res) => {
+  const memberId = req.query.memberId?.toString();
+  if (!memberId) return res.status(400).json(fail("VALIDATION_ERROR", "memberId query required"));
+  const votes = await listVotes(req.params.roomId, memberId);
+  res.json(ok(votes.map((v) => v.planId)));
+});
+
 app.get("/api/v1/rooms/:roomId/vote-result", async (req, res) => {
   const plans = await listPlans(req.params.roomId);
   const votes = await listVotes(req.params.roomId);
+  const members = await listMembers(req.params.roomId);
+  const memberCount = members.length;
   const countByPlan = new Map<string, number>();
   votes.forEach((v) => countByPlan.set(v.planId, (countByPlan.get(v.planId) ?? 0) + 1));
   const max = Math.max(0, ...countByPlan.values());
   const bestIds = new Set([...countByPlan.entries()].filter(([, c]) => c === max && c > 0).map(([id]) => id));
-  res.json(ok(plans.map((p) => ({ planId: p.id, title: p.title, voteCount: countByPlan.get(p.id) ?? 0, isBest: bestIds.has(p.id), isTied: bestIds.size > 1 && bestIds.has(p.id) }))));
+  res.json(ok({ memberCount, plans: plans.map((p) => ({ planId: p.id, title: p.title, voteCount: countByPlan.get(p.id) ?? 0, isBest: bestIds.has(p.id), isTied: bestIds.size > 1 && bestIds.has(p.id) })) }));
 });
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
