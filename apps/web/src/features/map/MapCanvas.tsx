@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { loadAMap } from "./amap";
+import { getAMapWebKey, loadAMap } from "./amap";
 import type { MarkerRow } from "../../services/api";
 
 export interface PoiSelect {
@@ -8,6 +8,11 @@ export interface PoiSelect {
   lat: number;
   address?: string;
   poiId?: string;
+}
+
+export interface PoiSearchResult {
+  first: PoiSelect | null;
+  total: number;
 }
 
 interface MapObj {
@@ -114,23 +119,83 @@ export function MapCanvas({ markers, onMapReady, onMapClick, onMarkerClick }: Pr
   return <div className="amap-canvas workbench-map" ref={mapRef} />;
 }
 
-export function searchPoi(mapInstance: unknown, keyword: string, onSelect: (poi: PoiSelect) => void) {
-  if (!keyword.trim() || !mapInstance) return;
-  const ps = new win.AMap.PlaceSearch({ map: mapInstance });
-  const mi = mapInstance as MapObj;
-  ps.search(keyword.trim(), (_s, r) => {
-    const pois = (r?.poiList as Record<string, unknown> | undefined)?.pois as Array<Record<string, unknown>> | undefined;
-    const first = pois?.[0];
-    if (!first) return;
-    const loc = first.location as { lng: number; lat: number };
-    onSelect({
-      placeName: first.name as string,
-      lng: loc.lng,
-      lat: loc.lat,
-      address: first.address as string | undefined,
-      poiId: first.id as string | undefined
+export async function searchPoi(mapInstance: unknown, keyword: string, onSelect: (poi: PoiSelect) => void): Promise<PoiSearchResult> {
+  const trimmed = keyword.trim();
+  if (!trimmed) {
+    return { first: null, total: 0 };
+  }
+
+  const mi = mapInstance as MapObj | null;
+  const webKey = getAMapWebKey();
+
+  if (webKey) {
+    const url = `https://restapi.amap.com/v3/place/text?key=${encodeURIComponent(webKey)}&keywords=${encodeURIComponent(trimmed)}&offset=10&page=1&extensions=base`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("高德搜索服务不可用");
+    }
+    const data = (await response.json()) as {
+      status?: string;
+      info?: string;
+      count?: string;
+      pois?: Array<{ id?: string; name?: string; address?: string; location?: string }>;
+    };
+    if (data.status !== "1") {
+      throw new Error(data.info || "高德搜索失败");
+    }
+
+    const first = data.pois?.[0];
+    if (!first?.location) {
+      return { first: null, total: Number(data.count || 0) };
+    }
+    const [lngText, latText] = first.location.split(",");
+    const lng = Number(lngText);
+    const lat = Number(latText);
+    const poi: PoiSelect = {
+      placeName: first.name || trimmed,
+      lng,
+      lat,
+      address: first.address,
+      poiId: first.id
+    };
+    onSelect(poi);
+    if (mi) {
+      mi.setCenter([lng, lat]);
+      mi.setZoom(14);
+    }
+    return { first: poi, total: Number(data.count || 1) };
+  }
+
+  if (!mapInstance) {
+    throw new Error("地图尚未加载完成");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const ps = new win.AMap.PlaceSearch({ map: mapInstance });
+    ps.search(trimmed, (_s, r) => {
+      const pois = (r?.poiList as Record<string, unknown> | undefined)?.pois as Array<Record<string, unknown>> | undefined;
+      const first = pois?.[0];
+      if (!first) {
+        resolve();
+        return;
+      }
+      const loc = first.location as { lng: number; lat: number };
+      const poi = {
+        placeName: first.name as string,
+        lng: loc.lng,
+        lat: loc.lat,
+        address: first.address as string | undefined,
+        poiId: first.id as string | undefined
+      };
+      onSelect(poi);
+      if (mi) {
+        mi.setCenter([loc.lng, loc.lat]);
+        mi.setZoom(14);
+      }
+      resolve();
     });
-    mi.setCenter([loc.lng, loc.lat]);
-    mi.setZoom(14);
+    setTimeout(() => reject(new Error("地点搜索超时")), 8000);
   });
+
+  return { first: null, total: 0 };
 }
