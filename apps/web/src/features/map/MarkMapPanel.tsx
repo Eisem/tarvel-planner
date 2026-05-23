@@ -16,6 +16,8 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const markerListRef = useRef<any[]>([]);
+  const markerByIdRef = useRef<Record<string, any>>({});
+  const infoWindowRef = useRef<any>(null);
 
   const [roomId, setRoomId] = useState<string>("");
   const [error, setError] = useState("");
@@ -23,17 +25,57 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   const [searchKeyword, setSearchKeyword] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [markers, setMarkers] = useState<Array<{ id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number }>>([]);
+  const [selectedMarkerId, setSelectedMarkerId] = useState("");
 
-  const canSave = useMemo(() => Boolean(roomId && memberId && draft?.placeName), [roomId, memberId, draft?.placeName]);
+  const canSave = useMemo(() => Boolean(roomId && memberId && draft?.placeName?.trim()), [roomId, memberId, draft?.placeName]);
+
+  function escapeText(value: string | number | undefined) {
+    if (value === undefined || value === null) return "-";
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function openMarkerInfo(row: { id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number }) {
+    const map = mapInstanceRef.current;
+    const markerObj = markerByIdRef.current[row.id];
+    const AMap = (window as any).AMap;
+    if (!map || !markerObj || !AMap) return;
+
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new AMap.InfoWindow({ offset: new AMap.Pixel(0, -30) });
+    }
+
+    const content = `
+      <div style="min-width:200px;padding:2px 0;line-height:1.5;">
+        <div style="font-weight:700;margin-bottom:4px;">${escapeText(row.placeName)}</div>
+        <div>预算：${escapeText(row.budget)}</div>
+        <div>备注：${escapeText(row.note)}</div>
+        <div>坐标：${row.lng.toFixed(5)}, ${row.lat.toFixed(5)}</div>
+      </div>
+    `;
+
+    infoWindowRef.current.setContent(content);
+    infoWindowRef.current.open(map, markerObj.getPosition());
+    setSelectedMarkerId(row.id);
+  }
 
   async function refreshMarkers(currentRoomId: string, mapObj?: any) {
     const rows = await api.listMarkers(currentRoomId);
+    setMarkers(rows);
     const map = mapObj ?? mapInstanceRef.current;
     if (!map) return;
     markerListRef.current.forEach((m) => map.remove(m));
+    markerByIdRef.current = {};
     markerListRef.current = rows.map((row) => {
       const marker = new (window as any).AMap.Marker({ position: [row.lng, row.lat], title: row.placeName });
       marker.setMap(map);
+      marker.on("click", () => openMarkerInfo(row));
+      markerByIdRef.current[row.id] = marker;
       return marker;
     });
   }
@@ -105,10 +147,14 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   async function saveDraft() {
     if (!draft || !canSave) return;
     try {
+      if (!memberId) {
+        setError("缺少成员标识，请从首页重新进入房间后再保存。");
+        return;
+      }
       setSaving(true);
       await api.createMarker(roomId, {
         memberId,
-        placeName: draft.placeName,
+        placeName: draft.placeName.trim(),
         lng: draft.lng,
         lat: draft.lat,
         address: draft.address,
@@ -132,9 +178,40 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
         <input value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} placeholder="搜索地点，如：东京塔" />
         <button className="btn" onClick={searchPoi}>搜索地点</button>
       </div>
+      {!memberId ? <p className="error-text">当前链接缺少成员信息，建议从首页重新进入房间。</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
       {loading ? <p className="page-note">地图加载中...</p> : null}
-      <div className="amap-canvas" ref={mapRef} />
+      <div className="mark-layout">
+        <div className="amap-canvas" ref={mapRef} />
+        <aside className="marker-list">
+          <h4>已标点列表</h4>
+          {markers.length === 0 ? (
+            <p className="page-note">还没有标点，先在地图上点击或搜索地点。</p>
+          ) : (
+            <ul>
+              {markers.map((row) => (
+                <li key={row.id}>
+                  <button
+                    className={selectedMarkerId === row.id ? "marker-item active" : "marker-item"}
+                    onClick={() => {
+                      const map = mapInstanceRef.current;
+                      if (map) {
+                        map.setCenter([row.lng, row.lat]);
+                        map.setZoom(14);
+                      }
+                      openMarkerInfo(row);
+                    }}
+                  >
+                    <strong>{row.placeName}</strong>
+                    <span>预算：{row.budget ?? "-"}</span>
+                    <small>{row.lng.toFixed(4)}, {row.lat.toFixed(4)}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
+      </div>
 
       <article className="draft-box">
         <h4>标点编辑</h4>

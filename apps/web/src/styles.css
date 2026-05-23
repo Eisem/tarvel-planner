@@ -330,6 +330,59 @@ input:focus {
   border: 1px solid #cbd5e1;
 }
 
+.mark-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 10px;
+}
+
+.marker-list {
+  border: 1px solid #dbe4ef;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.marker-list h4 {
+  margin: 0 0 8px;
+}
+
+.marker-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.marker-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.marker-item strong {
+  color: #0f172a;
+}
+
+.marker-item span,
+.marker-item small {
+  color: #475569;
+}
+
+.marker-item.active {
+  border-color: #0ea5e9;
+  background: #eff9ff;
+}
+
 .draft-box {
   padding: 12px;
   border: 1px solid #dbe4ef;
@@ -351,7 +404,8 @@ input:focus {
   .content-grid,
   .tri-grid,
   .tab-nav,
-  .stat-grid {
+  .stat-grid,
+  .mark-layout {
     grid-template-columns: 1fr;
   }
 

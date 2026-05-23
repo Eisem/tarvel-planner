@@ -1,5 +1,5 @@
 import { Link, NavLink, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "./services/api";
 import { MarkMapPanel } from "./features/map/MarkMapPanel";
 import type { ReactNode } from "react";
@@ -124,6 +124,9 @@ function HomePage() {
 
 function RoomNav() {
   const { roomCode } = useParams();
+  const [search] = useSearchParams();
+  const memberId = search.get("memberId");
+  const querySuffix = memberId ? `?memberId=${encodeURIComponent(memberId)}` : "";
   return (
     <header className="room-header">
       <div>
@@ -135,7 +138,7 @@ function RoomNav() {
       </Link>
       <nav className="tab-nav">
         {roomTabs.map((tab) => (
-          <NavLink key={tab.key} className={({ isActive }) => (isActive ? "tab active" : "tab")} to={`/rooms/${roomCode}/${tab.key}`}>
+          <NavLink key={tab.key} className={({ isActive }) => (isActive ? "tab active" : "tab")} to={`/rooms/${roomCode}/${tab.key}${querySuffix}`}>
             <strong>{tab.label}</strong>
             <span>{tab.desc}</span>
           </NavLink>
@@ -162,7 +165,21 @@ function PlaceholderCard({ title, desc, items }: { title: string; desc: string; 
 function MarkPage() {
   const { roomCode } = useParams();
   const [search] = useSearchParams();
-  const memberId = search.get("memberId") ?? "";
+  const queryMemberId = search.get("memberId") ?? "";
+  const storageKey = useMemo(() => (roomCode ? `tp_member_${roomCode}` : ""), [roomCode]);
+  const [memberId, setMemberId] = useState("");
+
+  useEffect(() => {
+    if (!roomCode || !storageKey) return;
+    if (queryMemberId) {
+      localStorage.setItem(storageKey, queryMemberId);
+      setMemberId(queryMemberId);
+      return;
+    }
+    const savedMemberId = localStorage.getItem(storageKey) ?? "";
+    setMemberId(savedMemberId);
+  }, [queryMemberId, roomCode, storageKey]);
+
   return (
     <AppShell>
       <section className="room-page">
