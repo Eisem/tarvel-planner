@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../services/api";
+import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/socket";
 import { loadAMap } from "./amap";
 
 type Draft = {
@@ -18,6 +19,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   const markerListRef = useRef<any[]>([]);
   const markerByIdRef = useRef<Record<string, any>>({});
   const infoWindowRef = useRef<any>(null);
+  const roomIdRef = useRef<string>("");
 
   const [roomId, setRoomId] = useState<string>("");
   const [error, setError] = useState("");
@@ -88,6 +90,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
         const room = await api.getRoom(roomCode);
         if (disposed) return;
         setRoomId(room.id);
+        roomIdRef.current = room.id;
 
         await loadAMap();
         if (disposed || !mapRef.current) return;
@@ -128,6 +131,33 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
       }
     };
   }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode || !memberId) return;
+
+    joinRoomRealtime(roomCode, memberId);
+
+    const onMarkerChanged = async () => {
+      const activeRoomId = roomIdRef.current;
+      if (!activeRoomId) return;
+      try {
+        await refreshMarkers(activeRoomId);
+      } catch {
+        // ignore transient sync failures
+      }
+    };
+
+    socket.on("marker.created", onMarkerChanged);
+    socket.on("marker.updated", onMarkerChanged);
+    socket.on("marker.deleted", onMarkerChanged);
+
+    return () => {
+      socket.off("marker.created", onMarkerChanged);
+      socket.off("marker.updated", onMarkerChanged);
+      socket.off("marker.deleted", onMarkerChanged);
+      leaveRoomRealtime(roomCode, memberId);
+    };
+  }, [roomCode, memberId]);
 
   function searchPoi() {
     if (!searchKeyword.trim() || !mapInstanceRef.current) return;

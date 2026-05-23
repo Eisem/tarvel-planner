@@ -12,6 +12,38 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return data.data as T;
 }
 
+export type MarkerRow = {
+  id: string;
+  placeName: string;
+  lng: number;
+  lat: number;
+  note?: string;
+  budget?: number;
+};
+
+export type PlanRow = {
+  id: string;
+  roomId: string;
+  creatorMemberId: string;
+  title: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlanItemRow = {
+  id: string;
+  planId: string;
+  markerId: string;
+  dayIndex: number;
+  startTime: string;
+  endTime: string;
+  orderIndex: number;
+  transportMode: string;
+  note?: string;
+  version: number;
+};
+
 export const api = {
   createRoom(payload: { roomName?: string; nickname: string }) {
     return req<{ roomCode: string; memberId: string }>("/rooms", {
@@ -29,7 +61,7 @@ export const api = {
     return req<{ id: string; code: string; name?: string; status: string; timezone: string }>(`/rooms/${roomCode}`);
   },
   listMarkers(roomId: string) {
-    return req<Array<{ id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number }>>(`/rooms/${roomId}/markers`);
+    return req<MarkerRow[]>(`/rooms/${roomId}/markers`);
   },
   createMarker(roomId: string, payload: {
     memberId: string;
@@ -48,5 +80,52 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     });
+  },
+  listPlans(roomId: string) {
+    return req<PlanRow[]>(`/rooms/${roomId}/plans`);
+  },
+  createPlan(roomId: string, payload: { creatorMemberId: string; title: string; description?: string }) {
+    return req<PlanRow>(`/rooms/${roomId}/plans`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  listPlanItems(planId: string) {
+    return req<PlanItemRow[]>(`/plans/${planId}/items`);
+  },
+  createPlanItem(planId: string, payload: {
+    markerId: string;
+    dayIndex: number;
+    startTime: string;
+    endTime: string;
+    orderIndex?: number;
+    transportMode?: string;
+    note?: string;
+  }) {
+    return req<PlanItemRow>(`/plans/${planId}/items`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  updatePlanItem(id: string, payload: {
+    dayIndex?: number;
+    startTime?: string;
+    endTime?: string;
+    orderIndex?: number;
+    note?: string;
+  }) {
+    return req<PlanItemRow>(`/plan-items/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  },
+  votePlan(planId: string, payload: { memberId: string }) {
+    return req(`/plans/${planId}/vote`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  getVoteResult(roomId: string) {
+    return req<Array<{ planId: string; title: string; voteCount: number; isBest: boolean; isTied: boolean }>>(`/rooms/${roomId}/vote-result`);
   }
 };

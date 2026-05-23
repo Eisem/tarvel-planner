@@ -133,6 +133,13 @@ app.get("/api/v1/rooms/:roomId/plans", async (req, res) => {
   res.json(ok(plans));
 });
 
+app.get("/api/v1/plans/:planId/items", async (req, res) => {
+  const plan = await getPlanById(req.params.planId);
+  if (!plan) return res.status(404).json(fail("PLAN_NOT_FOUND", "plan not found"));
+  const items = await prisma.planItem.findMany({ where: { planId: req.params.planId }, orderBy: [{ dayIndex: "asc" }, { orderIndex: "asc" }] });
+  res.json(ok(items));
+});
+
 app.post("/api/v1/plans/:planId/items", async (req, res) => {
   const parsed = z.object({ markerId: z.string().min(1), dayIndex: z.number().int().min(1), startTime: z.string(), endTime: z.string(), orderIndex: z.number().int().default(1), transportMode: z.enum(["WALK", "TAXI", "BUS", "DRIVE"]).default("WALK"), note: z.string().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
