@@ -320,7 +320,19 @@ export function WorkbenchPage() {
 
       <header className="wb-header">
         <div>
-          <p className="room-code">房间码：{roomCode}</p>
+          <p className="room-code">
+            房间码
+            <span className="room-code-value">{roomCode}</span>
+            <button
+              className="copy-btn"
+              onClick={() => {
+                navigator.clipboard.writeText(roomCode ?? "").catch(() => {});
+              }}
+              title="一键复制"
+            >
+              复制
+            </button>
+          </p>
           <h1>Group Trip Workspace</h1>
         </div>
         <Link className="btn" to="/">返回首页</Link>
