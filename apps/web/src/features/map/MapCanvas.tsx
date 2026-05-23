@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getAMapWebKey, loadAMap } from "./amap";
 import type { MarkerRow } from "../../services/api";
 
@@ -54,6 +54,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
   const makerRef = useRef<Map<string, InstanceType<typeof win.AMap.Marker>>>(new Map());
   const infoWindowRef = useRef<InstanceType<typeof win.AMap.InfoWindow> | null>(null);
   const draftMarkerRef = useRef<InstanceType<typeof win.AMap.Marker> | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   function escapeText(v: string | number | undefined) {
     if (v === undefined || v === null) return "-";
@@ -87,6 +88,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
         const map = new win.AMap.Map(mapRef.current, { zoom: 11, center: [116.397428, 39.90923] });
         map.addControl(new win.AMap.ToolBar());
         mapInstanceRef.current = map;
+        setMapReady(true);
         onMapReady(map);
 
         map.on("click", (e) => {
@@ -105,6 +107,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
       disposed = true;
       mapInstanceRef.current?.destroy();
       mapInstanceRef.current = null;
+      setMapReady(false);
     };
   }, []);
 
@@ -122,7 +125,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
       });
       makerRef.current.set(row.id, mk);
     });
-  }, [markers]);
+  }, [markers, mapReady]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;

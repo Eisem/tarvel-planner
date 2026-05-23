@@ -46,9 +46,20 @@ export function WorkbenchPage() {
   const [previewShared, setPreviewShared] = useState<{ planId: string; title: string; items: PlanItemDraft[] } | null>(null);
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
+  const [snapshotMode, setSnapshotMode] = useState(false);
+  const [dropTarget, setDropTarget] = useState<{ dayIndex: number; beforeMarkerId?: string } | null>(null);
 
   const mapInstanceRef = useRef<unknown>(null);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
+  const activeDraftMarkerIds = useMemo(() => {
+    if (!activeDraft) return markers.map((m) => m.id);
+    if (activeDraft.markerIds && activeDraft.markerIds.length > 0) return activeDraft.markerIds;
+    return markers.map((m) => m.id);
+  }, [activeDraft, markers]);
+  const activeDraftMarkerList = useMemo(
+    () => markers.filter((marker) => activeDraftMarkerIds.includes(marker.id)),
+    [markers, activeDraftMarkerIds]
+  );
   const activeDayCount = activeDraft?.dayCount ?? 3;
   const dayIndexes = useMemo(() => Array.from({ length: activeDayCount }, (_, idx) => idx + 1), [activeDayCount]);
 
@@ -163,12 +174,14 @@ export function WorkbenchPage() {
       return;
     }
     const draft = createDraft(roomCode, `快照 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
-    draft.planItems = picked.slice(0, 60).map((marker, index) => ({ markerId: marker.id, dayIndex: 1, orderIndex: index + 1 }));
+    draft.markerIds = picked.slice(0, 60).map((marker) => marker.id);
+    draft.planItems = [];
     const next = [draft, ...drafts];
     persistDrafts(next);
     setActiveDraftId(draft.id);
     setLeftTab("snapshots");
     setSelectedForSnapshot([]);
+    setSnapshotMode(false);
     setError("");
   }
 
@@ -238,6 +251,21 @@ export function WorkbenchPage() {
       dayItems.push({ markerId, dayIndex, orderIndex: dayItems.length + 1 });
       const others = without.filter((item) => item.dayIndex !== dayIndex);
       return { ...draft, planItems: [...others, ...dayItems] };
+    });
+  }
+
+  function handleDropBefore(markerId: string, dayIndex: number, beforeMarkerId: string) {
+    if (!activeDraft) return;
+
+    updateActiveDraft((draft) => {
+      const without = draft.planItems.filter((item) => item.markerId !== markerId);
+      const dayItems = without.filter((item) => item.dayIndex === dayIndex).sort((a, b) => a.orderIndex - b.orderIndex);
+      const targetIndex = dayItems.findIndex((item) => item.markerId === beforeMarkerId);
+      const insertAt = targetIndex < 0 ? dayItems.length : targetIndex;
+      dayItems.splice(insertAt, 0, { markerId, dayIndex, orderIndex: insertAt + 1 });
+      const normalized = dayItems.map((item, idx) => ({ ...item, orderIndex: idx + 1 }));
+      const others = without.filter((item) => item.dayIndex !== dayIndex);
+      return { ...draft, planItems: [...others, ...normalized] };
     });
   }
 
@@ -370,6 +398,7 @@ export function WorkbenchPage() {
         title: `${plan?.title || "共享方案"} 副本`,
         sourcePlanId: planId,
         dayCount: 3,
+        markerIds: [...new Set(normalized.map((item) => item.markerId))],
         planItems: normalized,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -457,13 +486,25 @@ export function WorkbenchPage() {
                 <button className="btn btn-primary btn-sm" disabled={searching} onClick={handleSearch}>{searching ? "搜索中" : "搜索"}</button>
               </div>
 
-              <div className="row-btns">
-                <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>保存勾选地点为快照</button>
-                <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
-                <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
-                <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
+              <div className="snapshot-entry">
+                {!snapshotMode ? (
+                  <button className="btn btn-primary snapshot-mode-btn" onClick={() => { setSnapshotMode(true); setSelectedForSnapshot([]); }}>
+                    保存勾选地点为快照
+                  </button>
+                ) : (
+                  <div className="snapshot-mode-panel">
+                    <p className="page-note">快照模式已开启：请勾选地点后保存。</p>
+                    <div className="row-btns">
+                      <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>确认保存快照</button>
+                      <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
+                      <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
+                      <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
+                      <button className="btn btn-sm" onClick={() => { setSnapshotMode(false); setSelectedForSnapshot([]); }}>退出快照模式</button>
+                    </div>
+                    <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
+                  </div>
+                )}
               </div>
-              <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
 
               {draftForm ? (
                 <div className="draft-box">
@@ -486,14 +527,16 @@ export function WorkbenchPage() {
                 {markers.map((marker) => (
                   <li key={marker.id}>
                     <div className={selectedMarkerId === marker.id ? "marker-item active" : "marker-item"}>
-                      <label className="marker-check">
-                        <input
-                          type="checkbox"
-                          checked={selectedForSnapshot.includes(marker.id)}
-                          onChange={() => toggleMarkerForSnapshot(marker.id)}
-                        />
-                        <span>加入快照</span>
-                      </label>
+                      {snapshotMode ? (
+                        <label className="marker-check">
+                          <input
+                            type="checkbox"
+                            checked={selectedForSnapshot.includes(marker.id)}
+                            onChange={() => toggleMarkerForSnapshot(marker.id)}
+                          />
+                          <span>加入快照</span>
+                        </label>
+                      ) : null}
                       <button
                         className="marker-focus"
                         draggable
@@ -570,6 +613,36 @@ export function WorkbenchPage() {
                   </div>
                 </div>
               ) : null}
+
+              {activeDraft ? (
+                <div className="snapshot-place-bank">
+                  <div className="row-btns">
+                    <h4>地点列表（拖到右侧行程）</h4>
+                    <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
+                      {placeListExpanded ? "收起" : "展开"}
+                    </button>
+                  </div>
+                  {placeListExpanded ? (
+                    <ul className="planner-place-list">
+                      {activeDraftMarkerList.map((marker) => (
+                        <li key={marker.id}>
+                          <button
+                            className="planner-place-item"
+                            draggable
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("markerId", marker.id);
+                              setDropTarget(null);
+                            }}
+                          >
+                            <span className="drag-chip">DRAG</span>
+                            <strong>{marker.placeName}</strong>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
         </aside>
@@ -603,65 +676,74 @@ export function WorkbenchPage() {
                 <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
                 <p className="page-note">当前 {activeDayCount} 天</p>
               </div>
-              <p className="page-note">左侧展开地点列表后拖到右侧天数列。重复拖拽同地点会自动挪到新日期并保留顺序。</p>
+              <p className="page-note">从左侧本地快照区域拖拽地点到右侧天数列。重复拖拽同地点会自动挪到新日期并保留顺序。</p>
 
-              <div className="planner-layout">
-                <section className="planner-left">
-                  <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
-                    {placeListExpanded ? "收起地点列表" : "展开地点列表"}
-                  </button>
-                  {placeListExpanded ? (
-                    <ul className="planner-place-list">
-                      {markers.map((marker) => (
-                        <li key={marker.id}>
-                          <button
-                            className="planner-place-item"
-                            draggable
-                            onDragStart={(event) => event.dataTransfer.setData("markerId", marker.id)}
-                          >
-                            <span className="drag-chip">DRAG</span>
-                            <strong>{marker.placeName}</strong>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-
-                <section className="planner-right">
-                  <div className="schedule-grid">
-                    {dayIndexes.map((day) => {
-                      const items = draftItemsByDay.get(day) ?? [];
-                      return (
+              <div className="schedule-grid full">
+                {dayIndexes.map((day) => {
+                  const items = draftItemsByDay.get(day) ?? [];
+                  return (
+                    <div
+                      key={day}
+                      className={dropTarget?.dayIndex === day && !dropTarget.beforeMarkerId ? "day-column drop-target" : "day-column"}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDropTarget({ dayIndex: day });
+                      }}
+                      onDragLeave={() => {
+                        setDropTarget((prev) => (prev?.dayIndex === day && !prev.beforeMarkerId ? null : prev));
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const markerId = event.dataTransfer.getData("markerId");
+                        if (markerId) {
+                          handleDropOnDay(markerId, day);
+                        }
+                        setDropTarget(null);
+                      }}
+                    >
+                      <p className="day-label">第{day}天</p>
+                      {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
+                      {items.map((item) => (
                         <div
-                          key={day}
-                          className="day-column"
-                          onDragOver={(event) => event.preventDefault()}
+                          key={`${item.markerId}-${item.dayIndex}`}
+                          className="day-item"
+                          data-mid={item.markerId}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData("markerId", item.markerId);
+                            setDropTarget(null);
+                          }}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            setDropTarget({ dayIndex: day, beforeMarkerId: item.markerId });
+                          }}
+                          onDragLeave={() => {
+                            setDropTarget((prev) =>
+                              prev?.dayIndex === day && prev.beforeMarkerId === item.markerId ? null : prev
+                            );
+                          }}
                           onDrop={(event) => {
                             event.preventDefault();
+                            event.stopPropagation();
                             const markerId = event.dataTransfer.getData("markerId");
                             if (markerId) {
-                              handleDropOnDay(markerId, day);
+                              handleDropBefore(markerId, day, item.markerId);
                             }
+                            setDropTarget(null);
                           }}
+                          style={dropTarget?.dayIndex === day && dropTarget.beforeMarkerId === item.markerId ? { outline: "2px solid #3b82f6" } : undefined}
                         >
-                          <p className="day-label">第{day}天</p>
-                          {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
-                          {items.map((item) => (
-                            <div key={`${item.markerId}-${item.dayIndex}`} className="day-item" data-mid={item.markerId}>
-                              <span>{getMarkerName(item.markerId)}</span>
-                              <div className="row-btns">
-                                <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
-                                <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
-                                <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
-                              </div>
-                            </div>
-                          ))}
+                          <span>{getMarkerName(item.markerId)}</span>
+                          <div className="row-btns">
+                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
+                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
+                            <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </section>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="row-btns">
