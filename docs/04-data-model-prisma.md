@@ -1,0 +1,150 @@
+# 04. Data Model (Prisma Draft)
+
+```prisma
+enum RoomStatus {
+  MARKING
+  PLANNING
+  VOTING
+  FINISHED
+}
+
+enum MemberRole {
+  OWNER
+  MEMBER
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TransportMode {
+  WALK
+  TAXI
+  BUS
+  DRIVE
+}
+
+model Room {
+  id                String     @id @default(cuid())
+  code              String     @unique
+  name              String?
+  status            RoomStatus @default(MARKING)
+  createdByMemberId String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  members           Member[]
+  markers           Marker[]
+  plans             Plan[]
+  votes             Vote[]
+}
+
+model Member {
+  id        String     @id @default(cuid())
+  roomId    String
+  nickname  String
+  color     String
+  avatarUrl String?
+  role      MemberRole @default(MEMBER)
+  joinedAt  DateTime   @default(now())
+
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  markers   Marker[]
+  plans     Plan[]
+  votes     Vote[]
+
+  @@index([roomId])
+  @@unique([roomId, nickname])
+}
+
+model Marker {
+  id                      String    @id @default(cuid())
+  roomId                  String
+  memberId                String
+  placeName               String
+  poiId                   String?
+  placeKey                String
+  lng                     Decimal   @db.Decimal(10, 7)
+  lat                     Decimal   @db.Decimal(10, 7)
+  address                 String?
+  budget                  Int?
+  purpose                 String?
+  expectedDurationMinutes Int?
+  priority                Priority  @default(MEDIUM)
+  note                    String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  deletedAt               DateTime?
+
+  room                    Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  member                  Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  planItems               PlanItem[]
+
+  @@index([roomId])
+  @@index([roomId, placeKey])
+  @@index([memberId])
+}
+
+model Plan {
+  id              String    @id @default(cuid())
+  roomId          String
+  creatorMemberId String
+  title           String
+  description     String?
+  status          String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  room            Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  creator         Member    @relation(fields: [creatorMemberId], references: [id], onDelete: Cascade)
+  items           PlanItem[]
+  votes           Vote[]
+
+  @@index([roomId])
+  @@index([creatorMemberId])
+}
+
+model PlanItem {
+  id            String        @id @default(cuid())
+  planId        String
+  markerId      String
+  dayIndex      Int
+  startTime     DateTime
+  endTime       DateTime
+  orderIndex    Int
+  transportMode TransportMode @default(WALK)
+  note          String?
+  version       Int           @default(1)
+
+  plan          Plan          @relation(fields: [planId], references: [id], onDelete: Cascade)
+  marker        Marker        @relation(fields: [markerId], references: [id], onDelete: Restrict)
+
+  @@index([planId])
+  @@index([planId, dayIndex, startTime])
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  roomId    String
+  planId    String
+  memberId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([planId])
+  @@unique([roomId, memberId])
+}
+```
+
+Notes:
+
+- All timestamps are UTC.
+- `placeKey` generation must be deterministic on backend.
+- For optimistic concurrency, increment `PlanItem.version` on each update.

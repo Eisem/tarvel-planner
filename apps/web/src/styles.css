@@ -1,0 +1,36 @@
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+  color: #111827;
+}
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+input {
+  padding: 8px 10px;
+}
+
+button {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+}
+
+a {
+  color: #2563eb;
+}
