@@ -8,6 +8,7 @@ import {
   createPlan,
   createPlanItem,
   createRoom,
+  deleteMarker,
   getMarkerById,
   getPlanById,
   getPlanItemById,
@@ -116,6 +117,20 @@ app.patch("/api/v1/markers/:markerId", async (req, res) => {
   const room = await prisma.room.findUnique({ where: { id: marker.roomId } });
   if (room) io.to(roomChannel(room.code)).emit("marker.updated", updated);
   res.json(ok(updated));
+});
+
+app.delete("/api/v1/markers/:markerId", async (req, res) => {
+  const parsed = z.object({ memberId: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
+  const marker = await getMarkerById(req.params.markerId);
+  if (!marker) return res.status(404).json(fail("MARKER_NOT_FOUND", "marker not found"));
+  if (marker.memberId !== parsed.data.memberId) {
+    return res.status(403).json(fail("FORBIDDEN_ACTION", "cannot delete marker from other members"));
+  }
+  await deleteMarker(req.params.markerId);
+  const room = await prisma.room.findUnique({ where: { id: marker.roomId } });
+  if (room) io.to(roomChannel(room.code)).emit("marker.deleted", { markerId: req.params.markerId });
+  res.json(ok({ markerId: req.params.markerId }));
 });
 
 app.post("/api/v1/rooms/:roomId/plans", async (req, res) => {
