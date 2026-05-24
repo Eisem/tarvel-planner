@@ -222,7 +222,6 @@ export function VotingPage() {
               复制
             </button>
           </p>
-          <h1>共享方案</h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}`}>返回工作台</Link>
@@ -250,7 +249,6 @@ export function VotingPage() {
                   <article key={plan.id} className={`vote-plan-card${starred ? " starred" : ""}`}>
                     <div className="vote-plan-info">
                       <strong>{plan.title}</strong>
-                      <small>创建者：{plan.creatorMemberId}</small>
                     </div>
                     <div className="vote-plan-actions">
                       <button
