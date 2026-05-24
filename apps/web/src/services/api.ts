@@ -5,6 +5,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...init
   });
+  if (!response.ok && !response.headers.get("content-type")?.includes("application/json")) {
+    throw new Error("服务器异常，请稍后重试");
+  }
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data?.message ?? "request failed");
