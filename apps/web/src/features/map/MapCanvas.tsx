@@ -22,6 +22,7 @@ interface MapObj {
   setCenter: (p: [number, number]) => void;
   setZoom: (z: number) => void;
   setMapStyle?: (style: string) => void;
+  setFitView: (overlays?: unknown[], immediately?: boolean, padding?: number[]) => void;
 }
 
 interface Props {
@@ -37,6 +38,7 @@ interface Props {
     color: string;
   }>;
   poiPreviewMarker?: { lng: number; lat: number; placeName: string } | null;
+  fitKey?: number;
   onMapReady: (mapInstance: MapObj) => void;
   onMapClick: (lng: number, lat: number, address: string) => void;
   onMarkerClick: (marker: MarkerRow) => void;
@@ -60,7 +62,7 @@ function markerIcon(color: string) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, routePaths, poiPreviewMarker, onMapReady, onMapClick, onMarkerClick }: Props) {
+export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, routePaths, poiPreviewMarker, fitKey, onMapReady, onMapClick, onMarkerClick }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<MapObj | null>(null);
   const makerRef = useRef<Map<string, InstanceType<typeof win.AMap.Marker>>>(new Map());
@@ -254,6 +256,13 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
       });
     });
   }, [routePaths, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady || !fitKey) return;
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.setFitView(undefined, true, [60, 40, 60, 40]);
+  }, [fitKey, mapReady]);
 
   return <div className="amap-canvas workbench-map" ref={mapRef} />;
 }

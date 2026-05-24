@@ -442,6 +442,7 @@ export function VotingPage() {
                 <MapCanvas
                   markers={modalMarkers}
                   routePaths={modalRoutePaths}
+                  fitKey={1}
                   draftMarker={null}
                   allowCreateMarker={false}
                   onMapReady={(map) => { mapInstanceRef.current = map; }}

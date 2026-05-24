@@ -38,6 +38,7 @@ export function WorkbenchPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,6 +60,7 @@ export function WorkbenchPage() {
   const [poiSearchResults, setPoiSearchResults] = useState<PoiSelect[]>([]);
   const [poiSearchTotal, setPoiSearchTotal] = useState(0);
   const [poiPreview, setPoiPreview] = useState<PoiSelect | null>(null);
+  const [mapFitKey, setMapFitKey] = useState(0);
 
   const mapInstanceRef = useRef<unknown>(null);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
@@ -249,6 +251,7 @@ export function WorkbenchPage() {
         setDrafts(localDrafts);
         setMarkers(markerRows);
         setSharedPlans(plans.map((p) => ({ id: p.id, title: p.title, creatorMemberId: p.creatorMemberId })));
+        setMapFitKey((n) => n + 1);
         setLoading(false);
       } catch (e) {
         if (!disposed) {
@@ -312,6 +315,12 @@ export function WorkbenchPage() {
     }
   }, [activeTimelineDay, activeDayCount]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   function getDistanceKm(fromLng: number, fromLat: number, toLng: number, toLat: number) {
     const toRad = (deg: number) => (deg * Math.PI) / 180;
     const earthRadiusKm = 6371;
@@ -361,6 +370,7 @@ export function WorkbenchPage() {
     persistDrafts(next);
     setActiveDraftId(draft.id);
     setLeftTab("snapshots");
+    setMapFitKey((n) => n + 1);
     setSelectedForSnapshot([]);
     setSnapshotMode(false);
     setError("");
@@ -584,6 +594,10 @@ export function WorkbenchPage() {
       setError("请先选择一个草稿，并确认你已加入房间");
       return;
     }
+    if (activeDraft.planItems.length === 0) {
+      setToast({ message: "编排内容为空，请先添加行程点", type: "error" });
+      return;
+    }
 
     try {
       setError("");
@@ -657,6 +671,7 @@ export function WorkbenchPage() {
       }
 
       await refreshSharedPlans(roomId);
+      setToast({ message: "推送成功，已加入共享方案列表", type: "success" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "推送方案失败");
     }
@@ -692,6 +707,7 @@ export function WorkbenchPage() {
       persistDrafts(next);
       setActiveDraftId(draft.id);
       setLeftTab("snapshots");
+      setMapFitKey((n) => n + 1);
       if (normalized.length < items.length) {
         setError("已复制可用地点，部分失效地点已自动跳过");
       }
@@ -787,12 +803,15 @@ export function WorkbenchPage() {
 
       {loading ? <p className="page-note wb-message">加载中...</p> : null}
       {error ? <p className="error-text wb-message">{error}</p> : null}
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>{toast.message}</div>
+      )}
 
       <motion.div className="wb-layout" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
         <aside className="wb-left">
           <div className="wb-tabs">
-            <button className={leftTab === "markers" ? "wb-tab active" : "wb-tab"} onClick={() => setLeftTab("markers")}>地点池</button>
-            <button className={leftTab === "snapshots" ? "wb-tab active" : "wb-tab"} onClick={() => setLeftTab("snapshots")}>方案管理</button>
+            <button className={leftTab === "markers" ? "wb-tab active" : "wb-tab"} onClick={() => { setLeftTab("markers"); setMapFitKey((n) => n + 1); }}>地点池</button>
+            <button className={leftTab === "snapshots" ? "wb-tab active" : "wb-tab"} onClick={() => { setLeftTab("snapshots"); setMapFitKey((n) => n + 1); }}>方案管理</button>
           </div>
 
           {leftTab === "markers" ? (
@@ -842,7 +861,7 @@ export function WorkbenchPage() {
 
               <div className="snapshot-entry">
                 {!snapshotMode ? (
-                  <button className="btn btn-primary snapshot-mode-btn" onClick={() => { setSnapshotMode(true); setSelectedForSnapshot([]); setDraftForm(null); setError(""); setLeftTab("snapshots"); if (drafts.length > 0) setActiveDraftId(drafts[0].id); }}>
+                  <button className="btn btn-primary snapshot-mode-btn" onClick={() => { setSnapshotMode(true); setSelectedForSnapshot([]); setDraftForm(null); setError(""); setLeftTab("snapshots"); setMapFitKey((n) => n + 1); if (drafts.length > 0) setActiveDraftId(drafts[0].id); }}>
                     开始规划
                   </button>
                 ) : (
@@ -1035,6 +1054,7 @@ export function WorkbenchPage() {
           <MapCanvas
             markers={markersForMap}
             routePaths={routePaths}
+            fitKey={mapFitKey}
             draftMarker={draftForm ? { lng: draftForm.lng, lat: draftForm.lat } : null}
             draftMarkerColor={memberColor}
             poiPreviewMarker={poiPreview ? { lng: poiPreview.lng, lat: poiPreview.lat, placeName: poiPreview.placeName } : null}
