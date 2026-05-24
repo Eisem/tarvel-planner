@@ -34,6 +34,16 @@ app.use(express.json());
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
+// 健康检查端点（用于 Docker healthcheck）
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: "healthy", timestamp: new Date().toISOString() });
+  } catch (e) {
+    res.status(503).json({ status: "unhealthy", error: "database unreachable" });
+  }
+});
+
 function ok(data: unknown) {
   return { code: "OK", message: "success", data, requestId: crypto.randomUUID() };
 }
