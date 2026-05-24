@@ -3,6 +3,8 @@ import express from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { z } from "zod";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createMarker,
   createPlan,
@@ -27,9 +29,22 @@ import {
 } from "./store.js";
 import type { RoomStatus } from "./types.js";
 
+// ES Module 下获取 __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 判断是否为生产模式
+const isProduction = process.env.NODE_ENV === "production";
+
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// 生产模式：托管前端静态文件
+if (isProduction) {
+  const distPath = path.join(__dirname, "../../web/dist");
+  app.use(express.static(distPath));
+}
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
@@ -255,6 +270,14 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   console.error(err);
   res.status(500).json(fail("INTERNAL_ERROR", "unhandled server error"));
 });
+
+// 生产模式：SPA fallback（所有未匹配的路由返回 index.html）
+if (isProduction) {
+  const indexPath = path.join(__dirname, "../../web/dist/index.html");
+  app.get("*", (_req, res) => {
+    res.sendFile(indexPath);
+  });
+}
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {

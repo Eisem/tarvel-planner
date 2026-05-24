@@ -8,15 +8,12 @@ cd "$PROJECT_DIR"
 
 echo "=== 启动 Trip Planner 服务 ==="
 
-# 使用 docker-compose 启动所有服务（DB + Server + Web）
-docker-compose up -d
+# 清理 5000 端口残留进程
+fuser -k 5000/tcp 2>/dev/null || true
+sleep 1
 
-# 等待服务启动
-sleep 5
-
-# 检查服务状态
-docker-compose ps
-
-echo "=== 服务已启动 ==="
-echo "前端: http://localhost:5000"
-echo "后端 API: http://localhost:5001/api"
+# 启动后端（同时托管前端静态文件）
+cd apps/server
+export PORT=5000
+export NODE_ENV=production
+exec node dist/main.js
