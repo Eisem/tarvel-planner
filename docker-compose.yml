@@ -40,6 +40,9 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        VITE_AMAP_JS_KEY: ${VITE_AMAP_JS_KEY}
+        VITE_AMAP_WEB_KEY: ${VITE_AMAP_WEB_KEY}
     restart: unless-stopped
     ports:
       - "5000:80"

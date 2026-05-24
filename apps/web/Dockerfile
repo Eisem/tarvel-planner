@@ -13,7 +13,15 @@ COPY index.html ./
 COPY tsconfig.json ./
 COPY vite.config.ts ./
 
-# 构建
+# 创建生产环境变量文件（高德密钥等）
+ARG VITE_AMAP_JS_KEY
+ARG VITE_AMAP_WEB_KEY
+ENV VITE_AMAP_JS_KEY=$VITE_AMAP_JS_KEY
+ENV VITE_AMAP_WEB_KEY=$VITE_AMAP_WEB_KEY
+ENV VITE_API_BASE_URL=/api/v1
+ENV VITE_SOCKET_URL=/
+
+# 构建（Vite 会读取 ENV 中的 VITE_ 变量）
 RUN npm run build
 
 # 使用 nginx serving 静态文件
