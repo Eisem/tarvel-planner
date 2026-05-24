@@ -222,30 +222,46 @@ export function WorkbenchPage() {
     (async () => {
       try {
         if (!roomCode) return;
+
+        // Phase 1: collect all data (no setState)
         const room = await api.getRoom(roomCode);
         if (disposed) return;
-        setRoomId(room.id);
-        setRoomName(room.name ?? "");
+
+        let selfColor: string | undefined;
         if (memberId) {
           const members = await api.listMembers(roomCode);
-          const self = members.find((member) => member.id === memberId);
-          if (self?.color) {
-            setMemberColor(self.color);
-          }
+          const selfData = members.find((m) => m.id === memberId);
+          selfColor = selfData?.color;
         }
-        setDrafts(loadDrafts(roomCode));
-        await Promise.all([refreshMarkers(room.id), refreshSharedPlans(room.id)]);
+
+        const localDrafts = loadDrafts(roomCode);
+        const [markerRows, plans] = await Promise.all([
+          api.listMarkers(room.id),
+          api.listPlans(room.id)
+        ]);
+
+        if (disposed) return;
+
+        // Phase 2: apply all state in one synchronous block
+        setRoomId(room.id);
+        setRoomName(room.name ?? "");
+        if (selfColor) setMemberColor(selfColor);
+        setDrafts(localDrafts);
+        setMarkers(markerRows);
+        setSharedPlans(plans.map((p) => ({ id: p.id, title: p.title, creatorMemberId: p.creatorMemberId })));
+        setLoading(false);
       } catch (e) {
-        if (!disposed) setError(e instanceof Error ? e.message : "初始化失败");
-      } finally {
-        if (!disposed) setLoading(false);
+        if (!disposed) {
+          setError(e instanceof Error ? e.message : "初始化失败");
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       disposed = true;
     };
-  }, [roomCode, memberId, refreshMarkers, refreshSharedPlans]);
+  }, [roomCode, memberId]);
 
   useEffect(() => {
     if (!roomCode || !memberId) return;

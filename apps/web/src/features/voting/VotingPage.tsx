@@ -41,8 +41,87 @@ export function VotingPage() {
   const [modalPlanId, setModalPlanId] = useState("");
   const [modalPlanTitle, setModalPlanTitle] = useState("");
   const [modalMarkers, setModalMarkers] = useState<MarkerRow[]>([]);
+  const [modalRoutePaths, setModalRoutePaths] = useState<Array<{
+    dayIndex: number;
+    path: [number, number][];
+    stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }>;
+    legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }>;
+    color: string;
+  }> | undefined>(undefined);
   const [modalLoading, setModalLoading] = useState(false);
   const mapInstanceRef = useRef<unknown>(null);
+
+  const DAY_COLORS = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#0ea5e9", "#0284c7", "#0369a1"];
+  const DEFAULT_STOP_MINUTES = 60;
+
+  function getDistanceKm(fromLng: number, fromLat: number, toLng: number, toLat: number) {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const dLat = toRad(toLat - fromLat);
+    const dLng = toRad(toLng - fromLng);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(fromLat)) * Math.cos(toRad(toLat)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  function estimateTravelMinutes(distanceKm: number) {
+    return Math.max(8, Math.round((distanceKm / 30) * 60));
+  }
+
+  function buildRoutePaths(items: PlanItemRow[], markerList: MarkerRow[]) {
+    const itemsByDay = new Map<number, PlanItemRow[]>();
+    items.forEach((item) => {
+      const list = itemsByDay.get(item.dayIndex) ?? [];
+      list.push(item);
+      itemsByDay.set(item.dayIndex, list.sort((a, b) => a.orderIndex - b.orderIndex));
+    });
+    const routes: Array<{
+      dayIndex: number;
+      path: [number, number][];
+      stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }>;
+      legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }>;
+      color: string;
+    }> = [];
+    itemsByDay.forEach((dayItems, dayIndex) => {
+      if (dayItems.length < 2) return;
+      const path: [number, number][] = [];
+      const stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }> = [];
+      const legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }> = [];
+      dayItems.forEach((item, idx) => {
+        const marker = markerList.find((m) => m.id === item.markerId);
+        if (!marker) return;
+        path.push([marker.lng, marker.lat]);
+        stops.push({
+          lng: marker.lng,
+          lat: marker.lat,
+          label: String(item.orderIndex),
+          isFirst: idx === 0,
+          isLast: idx === dayItems.length - 1,
+          stopMinutes: DEFAULT_STOP_MINUTES
+        });
+        if (idx > 0) {
+          const prev = dayItems[idx - 1];
+          const prevMarker = markerList.find((m) => m.id === prev.markerId);
+          if (prevMarker) {
+            const distanceKm = getDistanceKm(prevMarker.lng, prevMarker.lat, marker.lng, marker.lat);
+            legs.push({
+              from: [prevMarker.lng, prevMarker.lat],
+              to: [marker.lng, marker.lat],
+              distanceKm,
+              travelMinutes: estimateTravelMinutes(distanceKm)
+            });
+          }
+        }
+      });
+      if (path.length >= 2) {
+        routes.push({ dayIndex, path, stops, legs, color: DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
+      }
+    });
+    return routes.length > 0 ? routes : undefined;
+  }
 
   const refreshPlansAndVotes = useCallback(async (targetRoomId: string, mid: string) => {
     const [planList, myVotes, result, markerList] = await Promise.all([
@@ -73,18 +152,37 @@ export function VotingPage() {
     (async () => {
       if (!roomCode) return;
       try {
+        // Phase 1: collect all data (no setState)
         const room = await api.getRoom(roomCode);
         if (disposed) return;
+
+        const mid = memberId || queryMemberId;
+        const [planList, myVotes, result, markerList] = await Promise.all([
+          api.listPlans(room.id),
+          api.listMyVotes(room.id, mid),
+          api.getVoteResult(room.id),
+          api.listMarkers(room.id)
+        ]);
+
+        if (disposed) return;
+
+        // Phase 2: apply all state in one synchronous block
         setRoomId(room.id);
-        await refreshPlansAndVotes(room.id, memberId || queryMemberId);
+        setPlans(planList.map((p) => ({ id: p.id, title: p.title, creatorMemberId: p.creatorMemberId })));
+        setStarredIds(new Set(myVotes));
+        setVoteResults(result.plans);
+        setMemberCount(result.memberCount);
+        setMarkers(markerList);
+        setLoading(false);
       } catch (e) {
-        if (!disposed) setError(e instanceof Error ? e.message : "加载失败");
-      } finally {
-        if (!disposed) setLoading(false);
+        if (!disposed) {
+          setError(e instanceof Error ? e.message : "加载失败");
+          setLoading(false);
+        }
       }
     })();
     return () => { disposed = true; };
-  }, [roomCode, memberId, queryMemberId, refreshPlansAndVotes]);
+  }, [roomCode, memberId, queryMemberId]);
 
   useEffect(() => {
     if (!roomCode || !memberId) return;
@@ -153,6 +251,7 @@ export function VotingPage() {
       const planMarkerIds = new Set(items.map((item) => item.markerId));
       const filtered = markers.filter((m) => planMarkerIds.has(m.id));
       setModalMarkers(filtered);
+      setModalRoutePaths(buildRoutePaths(items, filtered));
     } catch (e) {
       setToast({ message: e instanceof Error ? e.message : "加载预览失败", type: "error" });
     } finally {
@@ -164,6 +263,7 @@ export function VotingPage() {
     setModalPlanId("");
     setModalPlanTitle("");
     setModalMarkers([]);
+    setModalRoutePaths(undefined);
   }
 
   async function saveToLocal(planId: string) {
@@ -337,6 +437,7 @@ export function VotingPage() {
               ) : (
                 <MapCanvas
                   markers={modalMarkers}
+                  routePaths={modalRoutePaths}
                   draftMarker={null}
                   allowCreateMarker={false}
                   onMapReady={(map) => { mapInstanceRef.current = map; }}

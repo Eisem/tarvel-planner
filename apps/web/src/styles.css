@@ -359,6 +359,7 @@ input:focus {
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+  contain: layout style;
 }
 
 .wb-center {
