@@ -316,8 +316,11 @@ export function VotingPage() {
 
       <motion.header className="wb-header" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <div>
-          <p className="room-code">
-            房间码
+          <h1>方案投票与结果</h1>
+        </div>
+        <div className="wb-header-right">
+          <div className="room-code-inline">
+            <span className="room-code-label">房间码</span>
             <span className="room-code-value">{roomCode}</span>
             <button
               className="copy-btn"
@@ -328,12 +331,13 @@ export function VotingPage() {
             >
               复制
             </button>
-          </p>
-          <h1>方案投票与结果</h1>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          </div>
           <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}`}>返回编排台</Link>
-          <Link className="btn" to="/">返回首页</Link>
+          <button className="btn" onClick={() => {
+            if (window.confirm("确定要退出当前房间吗？")) {
+              window.location.href = "/";
+            }
+          }}>退出房间</button>
         </div>
       </motion.header>
 

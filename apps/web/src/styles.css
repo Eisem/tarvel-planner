@@ -410,15 +410,16 @@ input:focus {
 }
 
 .map-user-card {
-  min-width: 180px;
-  padding: 8px 10px;
+  min-width: auto;
+  padding: 4px 10px;
   border: 1px solid #b8ceea;
   border-radius: 14px;
   background: linear-gradient(145deg, rgba(244, 250, 255, 0.96) 0%, rgba(255, 255, 255, 0.92) 100%);
   box-shadow: 0 10px 22px rgba(15, 39, 69, 0.1);
   backdrop-filter: blur(6px);
-  display: grid;
-  gap: 1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -428,15 +429,34 @@ input:focus {
 }
 
 .map-user-card span {
-  font-size: 11px;
-  color: #59779d;
-  letter-spacing: 0.03em;
+  font-size: 13px;
+  font-weight: 600;
+  color: #11243d;
 }
 
-.map-user-card strong {
-  font-size: 17px;
-  line-height: 1.2;
+.room-code-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.room-code-label {
+  font-size: 14px;
+  color: #587395;
+  font-weight: 700;
+}
+
+.room-code-value {
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 800;
   color: #11243d;
+  background: #f0f5ff;
+  border: 2px dashed #bcd0f5;
+  border-radius: 8px;
+  padding: 2px 10px;
+  letter-spacing: 0.04em;
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
 }
 
 .wb-tabs {

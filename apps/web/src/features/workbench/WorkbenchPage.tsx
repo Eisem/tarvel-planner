@@ -760,8 +760,11 @@ export function WorkbenchPage() {
 
       <motion.header className="wb-header" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <div>
-          <p className="room-code">
-            房间码
+          <h1>{roomName || "未命名房间"}</h1>
+        </div>
+        <div className="wb-header-right">
+          <div className="room-code-inline">
+            <span className="room-code-label">房间码</span>
             <span className="room-code-value">{roomCode}</span>
             <button
               className="copy-btn"
@@ -772,13 +775,6 @@ export function WorkbenchPage() {
             >
               复制
             </button>
-          </p>
-          <h1>{roomName || "未命名房间"}</h1>
-        </div>
-        <div className="wb-header-right">
-          <div className="map-user-card" aria-label="当前用户">
-            <span>协作身份</span>
-            <strong>{memberNickname || "未设置昵称"}</strong>
           </div>
           <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>共享方案列表</Link>
           <button className="btn" onClick={() => {
