@@ -116,6 +116,36 @@ export function WorkbenchPage() {
     return grouped;
   }, [activeDraft]);
 
+  const DAY_COLORS = ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#a855f7", "#ef4444", "#ec4899"];
+
+  const routePaths = useMemo(() => {
+    if (leftTab !== "snapshots") return undefined;
+    if (!activeDraft || activeDraft.planItems.length === 0) return undefined;
+    const routes: Array<{ dayIndex: number; path: [number, number][]; stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean }>; color: string }> = [];
+    draftItemsByDay.forEach((items, dayIndex) => {
+      if (items.length < 2) return;
+      const path: [number, number][] = [];
+      const stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean }> = [];
+      items.forEach((item, idx) => {
+        const marker = markers.find((m) => m.id === item.markerId);
+        if (marker) {
+          path.push([marker.lng, marker.lat]);
+          stops.push({
+            lng: marker.lng,
+            lat: marker.lat,
+            label: String(item.orderIndex),
+            isFirst: idx === 0,
+            isLast: idx === items.length - 1
+          });
+        }
+      });
+      if (path.length >= 2) {
+        routes.push({ dayIndex, path, stops, color: DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
+      }
+    });
+    return routes.length > 0 ? routes : undefined;
+  }, [activeDraft, draftItemsByDay, markers, leftTab]);
+
   useEffect(() => {
     if (!roomCode || !storageKey) return;
     if (queryMemberId) {
@@ -737,10 +767,7 @@ export function WorkbenchPage() {
                       <strong>{draft.title}</strong>
                       <small>{draft.planItems.length} 个行程点</small>
                     </button>
-                    <div className="row-btns">
-                      <button className="btn btn-sm" onClick={() => setActiveDraftId(draft.id)}>打开</button>
-                      <button className="btn btn-sm" onClick={() => deleteDraft(draft.id)}>删除</button>
-                    </div>
+                    <button className="draft-delete" onClick={() => deleteDraft(draft.id)}>×</button>
                   </article>
                 ))}
               </div>
@@ -814,6 +841,7 @@ export function WorkbenchPage() {
         <main className="wb-center">
           <MapCanvas
             markers={markersForMap}
+            routePaths={routePaths}
             draftMarker={draftForm ? { lng: draftForm.lng, lat: draftForm.lat } : null}
             draftMarkerColor={memberColor}
             allowCreateMarker={leftTab === "markers" && !snapshotMode}

@@ -28,6 +28,7 @@ interface Props {
   draftMarker?: { lng: number; lat: number } | null;
   draftMarkerColor?: string;
   allowCreateMarker?: boolean;
+  routePaths?: Array<{ dayIndex: number; path: [number, number][]; stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean }>; color: string }>;
   onMapReady: (mapInstance: MapObj) => void;
   onMapClick: (lng: number, lat: number, address: string) => void;
   onMarkerClick: (marker: MarkerRow) => void;
@@ -42,6 +43,7 @@ const win = window as unknown as {
     Pixel: new (x: number, y: number) => unknown;
     InfoWindow: new (o: Record<string, unknown>) => { setContent: (c: string) => void; open: (m: unknown, p: unknown) => void; close: () => void };
     PlaceSearch: new (o: Record<string, unknown>) => { search: (kw: string, cb: (s: string, r: Record<string, unknown>) => void) => void };
+    Polyline: new (o: Record<string, unknown>) => { setMap: (m: unknown) => void };
   }
 };
 
@@ -50,12 +52,16 @@ function markerIcon(color: string) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, onMapReady, onMapClick, onMarkerClick }: Props) {
+export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, routePaths, onMapReady, onMapClick, onMarkerClick }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<MapObj | null>(null);
   const makerRef = useRef<Map<string, InstanceType<typeof win.AMap.Marker>>>(new Map());
   const infoWindowRef = useRef<InstanceType<typeof win.AMap.InfoWindow> | null>(null);
   const draftMarkerRef = useRef<InstanceType<typeof win.AMap.Marker> | null>(null);
+  const polylineRefs = useRef<Array<InstanceType<typeof win.AMap.Polyline>>>([]);
+  const stopLabelRefs = useRef<Array<InstanceType<typeof win.AMap.Marker>>>([]);
+  const allowCreateMarkerRef = useRef(allowCreateMarker);
+  allowCreateMarkerRef.current = allowCreateMarker;
   const [mapReady, setMapReady] = useState(false);
 
   function escapeText(v: string | number | undefined) {
@@ -97,7 +103,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
           if (infoWindowRef.current) {
             infoWindowRef.current.close();
           }
-          if (!allowCreateMarker) return;
+          if (!allowCreateMarkerRef.current) return;
           const lnglat = e.lnglat as { getLng: () => number; getLat: () => number };
           const lng = lnglat.getLng();
           const lat = lnglat.getLat();
@@ -115,7 +121,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
       mapInstanceRef.current = null;
       setMapReady(false);
     };
-  }, [allowCreateMarker]);
+  }, []);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -145,6 +151,45 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
     mk.setMap(map);
     draftMarkerRef.current = mk;
   }, [draftMarker, draftMarkerColor, allowCreateMarker]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    polylineRefs.current.forEach((p) => p.setMap(null));
+    polylineRefs.current = [];
+    stopLabelRefs.current.forEach((m) => m.setMap(null));
+    stopLabelRefs.current = [];
+    if (!routePaths) return;
+    routePaths.forEach((route) => {
+      if (route.path.length < 2) return;
+      const polyline = new win.AMap.Polyline({
+        path: route.path,
+        strokeColor: route.color,
+        strokeWeight: 5,
+        strokeOpacity: 0.8,
+        strokeStyle: "solid",
+        lineJoin: "round",
+        lineCap: "round",
+        showDir: true,
+      });
+      polyline.setMap(map);
+      polylineRefs.current.push(polyline);
+
+      route.stops.forEach((stop) => {
+        let size = 22, bg = route.color, label = stop.label;
+        if (stop.isFirst) { size = 28; bg = "#22c55e"; label = "起"; }
+        if (stop.isLast)  { size = 28; bg = "#ef4444"; label = "终"; }
+        const content = `<div style="width:${size}px;height:${size}px;line-height:${size}px;border-radius:50%;background:${bg};color:#fff;font-size:${stop.isFirst || stop.isLast ? 13 : 11}px;font-weight:700;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.35);border:2px solid #fff;">${label}</div>`;
+        const mk = new win.AMap.Marker({
+          position: [stop.lng, stop.lat],
+          content,
+          offset: new win.AMap.Pixel(-size / 2, -(size + 18)),
+        });
+        mk.setMap(map);
+        stopLabelRefs.current.push(mk);
+      });
+    });
+  }, [routePaths, mapReady]);
 
   return <div className="amap-canvas workbench-map" ref={mapRef} />;
 }
