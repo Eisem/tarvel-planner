@@ -27,6 +27,7 @@ interface Props {
   markers: MarkerRow[];
   draftMarker?: { lng: number; lat: number } | null;
   draftMarkerColor?: string;
+  allowCreateMarker?: boolean;
   onMapReady: (mapInstance: MapObj) => void;
   onMapClick: (lng: number, lat: number, address: string) => void;
   onMarkerClick: (marker: MarkerRow) => void;
@@ -39,7 +40,7 @@ const win = window as unknown as {
     Geocoder: new () => { getAddress: (pos: number[], cb: (s: string, r: Record<string, unknown>) => void) => void };
     Marker: new (o: Record<string, unknown>) => { setMap: (m: unknown) => void; on: (e: string, fn: () => void) => void; getPosition: () => unknown };
     Pixel: new (x: number, y: number) => unknown;
-    InfoWindow: new (o: Record<string, unknown>) => { setContent: (c: string) => void; open: (m: unknown, p: unknown) => void; close: () => void };
+    InfoWindow: new (o: Record<string, unknown>) => { setContent: (c: string) => void; open: (m: unknown, p: unknown) => void };
     PlaceSearch: new (o: Record<string, unknown>) => { search: (kw: string, cb: (s: string, r: Record<string, unknown>) => void) => void };
   }
 };
@@ -49,7 +50,7 @@ function markerIcon(color: string) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, onMapClick, onMarkerClick }: Props) {
+export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, onMapReady, onMapClick, onMarkerClick }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<MapObj | null>(null);
   const makerRef = useRef<Map<string, InstanceType<typeof win.AMap.Marker>>>(new Map());
@@ -93,9 +94,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
         onMapReady(map);
 
         map.on("click", (e) => {
-          if (infoWindowRef.current) {
-            infoWindowRef.current.close();
-          }
+          if (!allowCreateMarker) return;
           const lnglat = e.lnglat as { getLng: () => number; getLat: () => number };
           const lng = lnglat.getLng();
           const lat = lnglat.getLat();
@@ -113,7 +112,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
       mapInstanceRef.current = null;
       setMapReady(false);
     };
-  }, []);
+  }, [allowCreateMarker]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -138,11 +137,11 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
       draftMarkerRef.current.setMap(null);
       draftMarkerRef.current = null;
     }
-    if (!draftMarker) return;
+    if (!draftMarker || !allowCreateMarker) return;
     const mk = new win.AMap.Marker({ position: [draftMarker.lng, draftMarker.lat], title: "待保存标点", icon: markerIcon(draftMarkerColor ?? "#ef4444"), offset: new win.AMap.Pixel(-12, -34) });
     mk.setMap(map);
     draftMarkerRef.current = mk;
-  }, [draftMarker, draftMarkerColor]);
+  }, [draftMarker, draftMarkerColor, allowCreateMarker]);
 
   return <div className="amap-canvas workbench-map" ref={mapRef} />;
 }

@@ -111,11 +111,11 @@ export async function listMarkers(roomId: string, memberId?: string) {
   const rows = await prisma.marker.findMany({
     where: { roomId, ...(memberId ? { memberId } : {}) },
     orderBy: { createdAt: "desc" },
-    include: { member: { select: { color: true } } }
+    include: { member: { select: { color: true, nickname: true } } }
   });
   return rows.map((m) => {
     const { member, ...rest } = m;
-    return { ...rest, lng: toNumber(rest.lng), lat: toNumber(rest.lat), color: member.color };
+    return { ...rest, lng: toNumber(rest.lng), lat: toNumber(rest.lat), color: member.color, creatorNickname: member.nickname };
   });
 }
 

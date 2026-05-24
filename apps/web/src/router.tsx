@@ -48,8 +48,9 @@ function HomePage() {
     try {
       setLoading(true);
       setError("");
-      const data = await api.createRoom({ nickname: nickname.trim(), roomName: roomName.trim() || undefined });
-      nav(`/rooms/${data.roomCode}/workbench?memberId=${data.memberId}`);
+      const normalizedNickname = nickname.trim();
+      const data = await api.createRoom({ nickname: normalizedNickname, roomName: roomName.trim() || undefined });
+      nav(`/rooms/${data.roomCode}/workbench?memberId=${data.memberId}&nickname=${encodeURIComponent(normalizedNickname)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "创建失败，请重试");
     } finally {
@@ -62,8 +63,9 @@ function HomePage() {
     try {
       setLoading(true);
       setError("");
-      const data = await api.joinRoom({ roomCode: roomCode.trim().toUpperCase(), nickname: nickname.trim() });
-      nav(`/rooms/${data.roomCode}/workbench?memberId=${data.memberId}`);
+      const normalizedNickname = nickname.trim();
+      const data = await api.joinRoom({ roomCode: roomCode.trim().toUpperCase(), nickname: normalizedNickname });
+      nav(`/rooms/${data.roomCode}/workbench?memberId=${data.memberId}&nickname=${encodeURIComponent(normalizedNickname)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加入失败，请检查房间码");
     } finally {
@@ -131,7 +133,7 @@ function HomePage() {
                 <input
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
-                  placeholder="例如：东京自由行"
+                  placeholder="例如：北京三日游"
                 />
               </label>
             ) : (

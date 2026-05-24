@@ -16,7 +16,7 @@ export function loadAMap() {
 
   const key = getAMapKey();
   if (!key) {
-    return Promise.reject(new Error("缺少 VITE_AMAP_JS_KEY，请先在 .env.local 配置高德 Key"));
+    return Promise.reject(new Error("缺少 VITE_AMAP_JS_KEY，请先在 .env 配置高德 Key"));
   }
 
   loader = new Promise<void>((resolve, reject) => {

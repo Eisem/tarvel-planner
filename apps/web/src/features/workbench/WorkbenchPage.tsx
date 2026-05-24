@@ -25,10 +25,14 @@ export function WorkbenchPage() {
   const [search] = useSearchParams();
 
   const queryMemberId = search.get("memberId") ?? "";
+  const queryNickname = search.get("nickname") ?? "";
   const storageKey = useMemo(() => (roomCode ? `tp_member_${roomCode}` : ""), [roomCode]);
+  const nicknameStorageKey = useMemo(() => (roomCode ? `tp_nickname_${roomCode}` : ""), [roomCode]);
   const [memberId, setMemberId] = useState("");
+  const [memberNickname, setMemberNickname] = useState("");
   const [memberColor, setMemberColor] = useState<string>("#ef4444");
   const [roomId, setRoomId] = useState("");
+  const [roomName, setRoomName] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,7 +44,6 @@ export function WorkbenchPage() {
   const [selectedMarkerId, setSelectedMarkerId] = useState("");
   const [selectedForSnapshot, setSelectedForSnapshot] = useState<string[]>([]);
   const [draftForm, setDraftForm] = useState<DraftForm | null>(null);
-  const [editingMarkerId, setEditingMarkerId] = useState("");
   const [drafts, setDrafts] = useState<DraftSnapshot[]>([]);
   const [activeDraftId, setActiveDraftId] = useState("");
   const [sharedPlans, setSharedPlans] = useState<Array<{ id: string; title: string; creatorMemberId: string }>>([]);
@@ -55,12 +58,20 @@ export function WorkbenchPage() {
   const activeDraftMarkerIds = useMemo(() => {
     if (!activeDraft) return markers.map((m) => m.id);
     if (activeDraft.markerIds && activeDraft.markerIds.length > 0) return activeDraft.markerIds;
+    if (activeDraft.planItems.length > 0) {
+      return [...new Set(activeDraft.planItems.map((item) => item.markerId))];
+    }
     return markers.map((m) => m.id);
   }, [activeDraft, markers]);
   const activeDraftMarkerList = useMemo(
     () => markers.filter((marker) => activeDraftMarkerIds.includes(marker.id)),
     [markers, activeDraftMarkerIds]
   );
+  const markersForMap = useMemo(() => {
+    if (leftTab !== "snapshots" || !activeDraft) return markers;
+    const selected = new Set(activeDraftMarkerIds);
+    return markers.filter((marker) => selected.has(marker.id));
+  }, [activeDraft, activeDraftMarkerIds, markers, leftTab]);
   const activeDayCount = activeDraft?.dayCount ?? 3;
   const dayIndexes = useMemo(() => Array.from({ length: activeDayCount }, (_, idx) => idx + 1), [activeDayCount]);
 
@@ -80,10 +91,16 @@ export function WorkbenchPage() {
     if (queryMemberId) {
       localStorage.setItem(storageKey, queryMemberId);
       setMemberId(queryMemberId);
-      return;
+    } else {
+      setMemberId(localStorage.getItem(storageKey) ?? "");
     }
-    setMemberId(localStorage.getItem(storageKey) ?? "");
-  }, [queryMemberId, roomCode, storageKey]);
+    if (queryNickname) {
+      localStorage.setItem(nicknameStorageKey, queryNickname);
+      setMemberNickname(queryNickname);
+    } else {
+      setMemberNickname(localStorage.getItem(nicknameStorageKey) ?? "");
+    }
+  }, [queryMemberId, queryNickname, roomCode, storageKey, nicknameStorageKey]);
 
   const refreshMarkers = useCallback(async (targetRoomId: string) => {
     const rows = await api.listMarkers(targetRoomId);
@@ -96,6 +113,18 @@ export function WorkbenchPage() {
   }, []);
 
   useEffect(() => {
+    if (leftTab === "markers") {
+      setSnapshotMode(false);
+      setSelectedForSnapshot([]);
+      setDraftForm(null);
+      setError("");
+      if (roomId) {
+        refreshMarkers(roomId).catch(() => undefined);
+      }
+    }
+  }, [leftTab, roomId, refreshMarkers]);
+
+  useEffect(() => {
     let disposed = false;
     setLoading(true);
     (async () => {
@@ -104,6 +133,7 @@ export function WorkbenchPage() {
         const room = await api.getRoom(roomCode);
         if (disposed) return;
         setRoomId(room.id);
+        setRoomName(room.name ?? "");
         if (memberId) {
           const members = await api.listMembers(roomCode);
           const self = members.find((member) => member.id === memberId);
@@ -158,10 +188,17 @@ export function WorkbenchPage() {
     }
   }, [activeDraftId, drafts]);
 
-  function openDraft(draftId: string) {
-    setPreviewShared(null);
-    setActiveDraftId(draftId);
-  }
+  useEffect(() => {
+    if (leftTab !== "snapshots") return;
+    if (drafts.length === 0) {
+      setActiveDraftId("");
+      return;
+    }
+    const exists = drafts.some((draft) => draft.id === activeDraftId);
+    if (!exists) {
+      setActiveDraftId(drafts[0].id);
+    }
+  }, [leftTab, drafts, activeDraftId]);
 
   function persistDrafts(next: DraftSnapshot[]) {
     if (!roomCode) return;
@@ -179,12 +216,12 @@ export function WorkbenchPage() {
       setError("请选择至少一个地点加入快照");
       return;
     }
-    const draft = createDraft(roomCode, `快照 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
+    const draft = createDraft(roomCode, `方案 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
     draft.markerIds = picked.slice(0, 60).map((marker) => marker.id);
     draft.planItems = [];
     const next = [draft, ...drafts];
     persistDrafts(next);
-    openDraft(draft.id);
+    setActiveDraftId(draft.id);
     setLeftTab("snapshots");
     setSelectedForSnapshot([]);
     setSnapshotMode(false);
@@ -300,15 +337,10 @@ export function WorkbenchPage() {
 
   async function saveMarker() {
     if (!draftForm || !memberId || !roomId) return;
-    if (editingMarkerId && !markers.find((m) => m.id === editingMarkerId)) {
-      setError("该标点已被删除，请重新创建");
-      setEditingMarkerId("");
-      return;
-    }
     try {
       setSaving(true);
       setError("");
-      const payload = {
+      await api.createMarker(roomId, {
         memberId,
         placeName: draftForm.placeName.trim(),
         lng: draftForm.lng,
@@ -317,15 +349,9 @@ export function WorkbenchPage() {
         poiId: draftForm.poiId,
         budget: draftForm.budget,
         note: draftForm.note
-      };
-      if (editingMarkerId) {
-        await api.updateMarker(editingMarkerId, payload);
-      } else {
-        await api.createMarker(roomId, payload);
-      }
+      });
       await refreshMarkers(roomId);
       setDraftForm(null);
-      setEditingMarkerId("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存标点失败");
     } finally {
@@ -334,10 +360,10 @@ export function WorkbenchPage() {
   }
 
   async function deleteMarker(markerId: string) {
-    if (!memberId || !roomId) return;
+    if (!memberNickname || !roomId) return;
     try {
       setError("");
-      await api.deleteMarker(markerId, { memberId });
+      await api.deleteMarker(markerId, { nickname: memberNickname });
       await refreshMarkers(roomId);
       if (selectedMarkerId === markerId) {
         setSelectedMarkerId("");
@@ -348,11 +374,14 @@ export function WorkbenchPage() {
   }
 
   async function handleSearch() {
+    if (snapshotMode || leftTab !== "markers") {
+      setError("方案管理中不可新增标点，请先切回地点池");
+      return;
+    }
     try {
       setSearching(true);
       setError("");
       const result = await searchPoi(mapInstanceRef.current, searchKeyword, (poi: PoiSelect) => {
-        setEditingMarkerId("");
         setDraftForm({ placeName: poi.placeName, lng: poi.lng, lat: poi.lat, address: poi.address, poiId: poi.poiId });
       });
       if (!result.first) {
@@ -423,7 +452,7 @@ export function WorkbenchPage() {
       };
       const next = [draft, ...drafts];
       persistDrafts(next);
-      openDraft(draft.id);
+      setActiveDraftId(draft.id);
       setLeftTab("snapshots");
       if (normalized.length < items.length) {
         setError("已复制可用地点，部分失效地点已自动跳过");
@@ -459,14 +488,6 @@ export function WorkbenchPage() {
     return grouped;
   }, [previewShared]);
 
-  const previewDayIndexes = useMemo(() => {
-    if (!previewShared) return [] as number[];
-    const days = Array.from(previewItemsByDay.keys());
-    if (days.length === 0) return [1];
-    const maxDay = Math.max(...days);
-    return Array.from({ length: maxDay }, (_, idx) => idx + 1);
-  }, [previewShared, previewItemsByDay]);
-
   return (
     <div className="app-bg workbench-shell">
       <div className="orb orb-a" />
@@ -487,10 +508,10 @@ export function WorkbenchPage() {
               复制
             </button>
           </p>
-          <h1>Group Trip Workspace</h1>
+          <h1>{roomName || "未命名房间"}</h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}`}>投票</Link>
+          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>投票</Link>
           <Link className="btn" to="/">返回首页</Link>
         </div>
       </header>
@@ -508,33 +529,33 @@ export function WorkbenchPage() {
           {leftTab === "markers" ? (
             <div className="wb-panel">
               <div className="wb-search-row">
-                <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：东京塔" />
+                <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：紫禁城" />
                 <button className="btn btn-primary btn-sm" disabled={searching} onClick={handleSearch}>{searching ? "搜索中" : "搜索"}</button>
               </div>
 
               <div className="snapshot-entry">
                 {!snapshotMode ? (
-                  <button className="btn btn-primary snapshot-mode-btn" onClick={() => { setSnapshotMode(true); setSelectedForSnapshot([]); }}>
-                    保存勾选地点为快照
+                  <button className="btn btn-primary snapshot-mode-btn" onClick={() => { setSnapshotMode(true); setSelectedForSnapshot([]); setDraftForm(null); setError(""); setLeftTab("snapshots"); if (drafts.length > 0) setActiveDraftId(drafts[0].id); }}>
+                    开始规划
                   </button>
                 ) : (
                   <div className="snapshot-mode-panel">
-                    <p className="page-note">快照模式已开启：请勾选地点后保存。</p>
+                    <p className="page-note">规划模式已开启：请勾选地点后保存。</p>
                     <div className="row-btns">
-                      <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>确认保存快照</button>
+                      <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>保存为本地方案</button>
                       <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
                       <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
                       <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
-                      <button className="btn btn-sm" onClick={() => { setSnapshotMode(false); setSelectedForSnapshot([]); }}>退出快照模式</button>
+                      <button className="btn btn-sm" onClick={() => { setSnapshotMode(false); setSelectedForSnapshot([]); }}>退出规划模式</button>
                     </div>
                     <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
                   </div>
                 )}
               </div>
 
-              {draftForm ? (
-                <div className={`draft-box${editingMarkerId ? " editing" : ""}`}>
-                  <h4>{editingMarkerId ? `编辑：${draftForm?.placeName ?? ""}` : "新增标点"}</h4>
+              {!snapshotMode && draftForm ? (
+                <div className="draft-box">
+                  <h4>标点编辑</h4>
                   <div className="draft-grid">
                     <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
                     <label><span>预算（可选）</span><input type="number" value={draftForm.budget ?? ""} onChange={(event) => setDraftForm({ ...draftForm, budget: event.target.value ? Number(event.target.value) : undefined })} /></label>
@@ -542,7 +563,7 @@ export function WorkbenchPage() {
                     <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
                     <div className="row-btns">
                       <button className="btn btn-primary btn-sm" disabled={saving || !draftForm.placeName.trim()} onClick={saveMarker}>{saving ? "保存中" : "保存"}</button>
-                      <button className="btn btn-sm" onClick={() => { setDraftForm(null); setEditingMarkerId(""); }}>取消</button>
+                      <button className="btn btn-sm" onClick={() => setDraftForm(null)}>取消</button>
                     </div>
                   </div>
                 </div>
@@ -560,7 +581,7 @@ export function WorkbenchPage() {
                             checked={selectedForSnapshot.includes(marker.id)}
                             onChange={() => toggleMarkerForSnapshot(marker.id)}
                           />
-                          <span>加入快照</span>
+                          <span>加入方案</span>
                         </label>
                       ) : null}
                       <button
@@ -578,29 +599,11 @@ export function WorkbenchPage() {
                       >
                         <strong>{marker.placeName}</strong>
                         <span>预算：{marker.budget ?? "-"}</span>
-                        <span>创建者：{marker.memberId === memberId ? "我" : marker.memberId.slice(0, 6)}</span>
+                        <span>创建者：{marker.creatorNickname ?? "未知"}</span>
                         <small>{marker.lng.toFixed(4)}, {marker.lat.toFixed(4)}</small>
                       </button>
-                      {marker.memberId === memberId ? (
-                        <div className="row-btns">
-                          <button className="btn btn-sm" onClick={() => {
-                            setDraftForm({
-                              placeName: marker.placeName,
-                              lng: marker.lng,
-                              lat: marker.lat,
-                              budget: marker.budget ?? undefined,
-                              note: marker.note ?? undefined
-                            });
-                            setEditingMarkerId(marker.id);
-                            setSelectedMarkerId(marker.id);
-                            const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
-                            if (map) {
-                              map.setCenter([marker.lng, marker.lat]);
-                              map.setZoom(14);
-                            }
-                          }}>编辑</button>
-                          <button className="btn btn-sm" onClick={() => deleteMarker(marker.id)}>删除</button>
-                        </div>
+                      {marker.creatorNickname === memberNickname ? (
+                        <button className="btn btn-sm" onClick={() => deleteMarker(marker.id)}>删除</button>
                       ) : null}
                     </div>
                   </li>
@@ -609,16 +612,45 @@ export function WorkbenchPage() {
             </div>
           ) : (
             <div className="wb-panel">
-              <h4>本地快照（{drafts.length}）</h4>
+              {snapshotMode ? (
+                <div className="snapshot-mode-panel">
+                  <p className="page-note">规划模式已开启：请勾选地点后保存为本地方案。</p>
+                  <div className="row-btns">
+                    <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>保存为本地方案</button>
+                    <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
+                    <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
+                    <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
+                    <button className="btn btn-sm" onClick={() => { setSnapshotMode(false); setSelectedForSnapshot([]); }}>退出规划模式</button>
+                  </div>
+                  <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
+                  <ul className="marker-list-inner">
+                    {markers.map((marker) => (
+                      <li key={`pick-${marker.id}`}>
+                        <label className="marker-item marker-check-row">
+                          <input
+                            type="checkbox"
+                            checked={selectedForSnapshot.includes(marker.id)}
+                            onChange={() => toggleMarkerForSnapshot(marker.id)}
+                          />
+                          <span>{marker.placeName}</span>
+                          <small>{marker.creatorNickname ?? "未知创建者"}</small>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <h4>本地方案（{drafts.length}）</h4>
               <div className="draft-cards">
                 {drafts.map((draft) => (
                   <article key={draft.id} className={activeDraftId === draft.id ? "draft-card active" : "draft-card"}>
-                    <button className="draft-open" onClick={() => openDraft(draft.id)}>
+                    <button className="draft-open" onClick={() => setActiveDraftId(draft.id)}>
                       <strong>{draft.title}</strong>
                       <small>{draft.planItems.length} 个行程点</small>
                     </button>
                     <div className="row-btns">
-                      <button className="btn btn-sm" onClick={() => openDraft(draft.id)}>打开</button>
+                      <button className="btn btn-sm" onClick={() => setActiveDraftId(draft.id)}>打开</button>
                       <button className="btn btn-sm" onClick={() => deleteDraft(draft.id)}>删除</button>
                     </div>
                   </article>
@@ -628,7 +660,7 @@ export function WorkbenchPage() {
               <h4>共享方案（只读，可复制）</h4>
               <div className="draft-cards">
                 {sharedPlans.map((plan) => (
-                  <article key={plan.id} className={previewShared?.planId === plan.id ? "draft-card active" : "draft-card"}>
+                  <article key={plan.id} className="draft-card">
                     <strong>{plan.title}</strong>
                     <small>创建者：{plan.creatorMemberId}</small>
                     <div className="row-btns">
@@ -639,12 +671,31 @@ export function WorkbenchPage() {
                 ))}
               </div>
 
-              {activeDraft && !previewShared ? (
+              {previewShared ? (
+                <div className="shared-preview">
+                  <div className="row-btns">
+                    <strong>{previewShared.title} 预览</strong>
+                    <button className="btn btn-sm" onClick={() => setPreviewShared(null)}>关闭预览</button>
+                  </div>
+                  <div className="shared-preview-days">
+                    {Array.from(previewItemsByDay.keys()).sort((a, b) => a - b).map((day) => (
+                      <section key={day} className="shared-day">
+                        <p>第{day}天</p>
+                        {(previewItemsByDay.get(day) ?? []).map((item) => (
+                          <small key={`${item.markerId}-${item.dayIndex}-${item.orderIndex}`}>{item.orderIndex}. {getMarkerName(item.markerId)}</small>
+                        ))}
+                      </section>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {activeDraft ? (
                 <div className="snapshot-place-bank">
                   <div className="row-btns">
                     <h4>地点列表（拖到右侧行程）</h4>
-                    <button className="place-list-toggle" onClick={() => setPlaceListExpanded((prev) => !prev)}>
-                      {placeListExpanded ? "收起 ▲" : "展开 ▼"}
+                    <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
+                      {placeListExpanded ? "收起" : "展开"}
                     </button>
                   </div>
                   {placeListExpanded ? (
@@ -674,148 +725,114 @@ export function WorkbenchPage() {
 
         <main className="wb-center">
           <MapCanvas
-            markers={markers}
+            markers={markersForMap}
             draftMarker={draftForm ? { lng: draftForm.lng, lat: draftForm.lat } : null}
             draftMarkerColor={memberColor}
+            allowCreateMarker={leftTab === "markers" && !snapshotMode}
             onMapReady={(map) => {
               mapInstanceRef.current = map;
             }}
             onMapClick={(lng, lat, address) => {
-              setEditingMarkerId("");
+              if (snapshotMode || leftTab !== "markers") {
+                setError("方案管理中不可新增标点，请先切回地点池");
+                return;
+              }
               setDraftForm({ placeName: address || "未命名地点", lng, lat, address });
             }}
-            onMarkerClick={(marker) => {
-              setSelectedMarkerId(marker.id);
-              setEditingMarkerId(marker.id);
-              setDraftForm({
-                placeName: marker.placeName,
-                lng: marker.lng,
-                lat: marker.lat,
-                budget: marker.budget ?? undefined,
-                note: marker.note ?? undefined
-              });
-            }}
+            onMarkerClick={(marker) => setSelectedMarkerId(marker.id)}
           />
         </main>
 
-        <aside className={`wb-right${previewShared ? " frozen" : ""}`}>
-          {previewShared ? (
+        <aside className="wb-right">
+          <h4>行程编排</h4>
+          {!activeDraft ? (
+            <p className="page-note">先在左侧创建或打开本地方案，然后把地点拖入对应日期。</p>
+          ) : (
             <>
+              <input
+                className="draft-title-input"
+                value={activeDraft.title}
+                onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
+              />
               <div className="row-btns">
-                <h4>{previewShared.title}</h4>
-                <span className="frozen-badge">只读预览</span>
-                <button className="btn btn-sm" onClick={() => setPreviewShared(null)}>关闭预览</button>
+                <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
+                <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
+                <p className="page-note">当前 {activeDayCount} 天</p>
               </div>
+              <p className="page-note">从左侧本地方案区域拖拽地点到右侧天数列。重复拖拽同地点会自动挪到新日期并保留顺序。</p>
+
               <div className="schedule-grid full">
-                {previewDayIndexes.map((day) => {
-                  const items = previewItemsByDay.get(day) ?? [];
+                {dayIndexes.map((day) => {
+                  const items = draftItemsByDay.get(day) ?? [];
                   return (
-                    <div key={day} className="day-column frozen-day">
+                    <div
+                      key={day}
+                      className={dropTarget?.dayIndex === day && !dropTarget.beforeMarkerId ? "day-column drop-target" : "day-column"}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDropTarget({ dayIndex: day });
+                      }}
+                      onDragLeave={() => {
+                        setDropTarget((prev) => (prev?.dayIndex === day && !prev.beforeMarkerId ? null : prev));
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const markerId = event.dataTransfer.getData("markerId");
+                        if (markerId) {
+                          handleDropOnDay(markerId, day);
+                        }
+                        setDropTarget(null);
+                      }}
+                    >
                       <p className="day-label">第{day}天</p>
-                      {items.length === 0 ? <p className="day-hint">无安排</p> : null}
+                      {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
                       {items.map((item) => (
-                        <div key={`${item.markerId}-${item.dayIndex}`} className="day-item frozen-item">
+                        <div
+                          key={`${item.markerId}-${item.dayIndex}`}
+                          className="day-item"
+                          data-mid={item.markerId}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData("markerId", item.markerId);
+                            setDropTarget(null);
+                          }}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            setDropTarget({ dayIndex: day, beforeMarkerId: item.markerId });
+                          }}
+                          onDragLeave={() => {
+                            setDropTarget((prev) =>
+                              prev?.dayIndex === day && prev.beforeMarkerId === item.markerId ? null : prev
+                            );
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const markerId = event.dataTransfer.getData("markerId");
+                            if (markerId) {
+                              handleDropBefore(markerId, day, item.markerId);
+                            }
+                            setDropTarget(null);
+                          }}
+                          style={dropTarget?.dayIndex === day && dropTarget.beforeMarkerId === item.markerId ? { outline: "2px solid #3b82f6" } : undefined}
+                        >
                           <span>{getMarkerName(item.markerId)}</span>
+                          <div className="row-btns">
+                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
+                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
+                            <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   );
                 })}
               </div>
-            </>
-          ) : (
-            <>
-              <h4>行程编排</h4>
-              {!activeDraft ? (
-                <p className="page-note">先在左侧创建或打开快照，然后把地点拖入对应日期。</p>
-              ) : (
-                <>
-                  <input
-                    className="draft-title-input"
-                    value={activeDraft.title}
-                    onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
-                  />
-                  <div className="row-btns">
-                    <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
-                    <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
-                    <p className="page-note">当前 {activeDayCount} 天</p>
-                  </div>
-                  <p className="page-note">从左侧本地快照区域拖拽地点到右侧天数列。重复拖拽同地点会自动挪到新日期并保留顺序。</p>
 
-                  <div className="schedule-grid full">
-                    {dayIndexes.map((day) => {
-                      const items = draftItemsByDay.get(day) ?? [];
-                      return (
-                        <div
-                          key={day}
-                          className={dropTarget?.dayIndex === day && !dropTarget.beforeMarkerId ? "day-column drop-target" : "day-column"}
-                          onDragOver={(event) => {
-                            event.preventDefault();
-                            setDropTarget({ dayIndex: day });
-                          }}
-                          onDragLeave={() => {
-                            setDropTarget((prev) => (prev?.dayIndex === day && !prev.beforeMarkerId ? null : prev));
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            const markerId = event.dataTransfer.getData("markerId");
-                            if (markerId) {
-                              handleDropOnDay(markerId, day);
-                            }
-                            setDropTarget(null);
-                          }}
-                        >
-                          <p className="day-label">第{day}天</p>
-                          {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
-                          {items.map((item) => (
-                            <div
-                              key={`${item.markerId}-${item.dayIndex}`}
-                              className="day-item"
-                              data-mid={item.markerId}
-                              draggable
-                              onDragStart={(event) => {
-                                event.dataTransfer.setData("markerId", item.markerId);
-                                setDropTarget(null);
-                              }}
-                              onDragOver={(event) => {
-                                event.preventDefault();
-                                setDropTarget({ dayIndex: day, beforeMarkerId: item.markerId });
-                              }}
-                              onDragLeave={() => {
-                                setDropTarget((prev) =>
-                                  prev?.dayIndex === day && prev.beforeMarkerId === item.markerId ? null : prev
-                                );
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const markerId = event.dataTransfer.getData("markerId");
-                                if (markerId) {
-                                  handleDropBefore(markerId, day, item.markerId);
-                                }
-                                setDropTarget(null);
-                              }}
-                              style={dropTarget?.dayIndex === day && dropTarget.beforeMarkerId === item.markerId ? { outline: "2px solid #3b82f6" } : undefined}
-                            >
-                              <span>{getMarkerName(item.markerId)}</span>
-                              <div className="row-btns">
-                                <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
-                                <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
-                                <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="row-btns">
-                    <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
-                    <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除本地草稿</button>
-                  </div>
-                </>
-              )}
+              <div className="row-btns">
+                <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
+                <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除本地草稿</button>
+              </div>
             </>
           )}
         </aside>

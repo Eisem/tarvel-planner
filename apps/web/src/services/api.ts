@@ -15,6 +15,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export type MarkerRow = {
   id: string;
   memberId: string;
+  creatorNickname?: string;
   color?: string;
   placeName: string;
   lng: number;
@@ -86,7 +87,7 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
-  deleteMarker(markerId: string, payload: { memberId: string }) {
+  deleteMarker(markerId: string, payload: { nickname: string }) {
     return req<{ markerId: string }>(`/markers/${markerId}`, {
       method: "DELETE",
       body: JSON.stringify(payload)

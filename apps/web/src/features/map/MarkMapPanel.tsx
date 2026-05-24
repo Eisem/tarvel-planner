@@ -205,7 +205,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   return (
     <div className="amap-panel">
       <div className="amap-toolbar">
-        <input value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} placeholder="搜索地点，如：东京塔" />
+        <input value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} placeholder="搜索地点，如：紫禁城" />
         <button className="btn" onClick={searchPoi}>搜索地点</button>
       </div>
       {!memberId ? <p className="error-text">当前链接缺少成员信息，建议从首页重新进入房间。</p> : null}

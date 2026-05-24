@@ -361,6 +361,20 @@ input:focus {
   gap: 6px;
 }
 
+.marker-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marker-check-row input {
+  width: auto;
+}
+
+.marker-check-row span {
+  flex: 1;
+}
+
 .marker-check input {
   width: auto;
 }

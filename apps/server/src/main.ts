@@ -121,11 +121,12 @@ app.patch("/api/v1/markers/:markerId", async (req, res) => {
 });
 
 app.delete("/api/v1/markers/:markerId", async (req, res) => {
-  const parsed = z.object({ memberId: z.string().min(1) }).safeParse(req.body);
+  const parsed = z.object({ nickname: z.string().min(1) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
   const marker = await getMarkerById(req.params.markerId);
   if (!marker) return res.status(404).json(fail("MARKER_NOT_FOUND", "marker not found"));
-  if (marker.memberId !== parsed.data.memberId) {
+  const owner = await prisma.member.findUnique({ where: { id: marker.memberId } });
+  if (!owner || owner.nickname !== parsed.data.nickname) {
     return res.status(403).json(fail("FORBIDDEN_ACTION", "cannot delete marker from other members"));
   }
   await deleteMarker(req.params.markerId);
