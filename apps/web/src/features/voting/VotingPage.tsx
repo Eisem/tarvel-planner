@@ -99,10 +99,16 @@ export function VotingPage() {
 
     socket.on("vote.updated", onVoteUpdated);
     socket.on("plan.created", onPlanCreated);
+    socket.on("marker.created", onVoteUpdated);
+    socket.on("marker.updated", onVoteUpdated);
+    socket.on("marker.deleted", onVoteUpdated);
 
     return () => {
       socket.off("vote.updated", onVoteUpdated);
       socket.off("plan.created", onPlanCreated);
+      socket.off("marker.created", onVoteUpdated);
+      socket.off("marker.updated", onVoteUpdated);
+      socket.off("marker.deleted", onVoteUpdated);
       leaveRoomRealtime(roomCode, memberId);
     };
   }, [memberId, roomCode, roomId, refreshPlansAndVotes]);
