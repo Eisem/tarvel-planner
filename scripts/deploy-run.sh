@@ -14,6 +14,12 @@ sleep 1
 
 # 启动后端（同时托管前端静态文件）
 cd apps/server
+
+# 执行数据库迁移
+echo "=== 执行数据库迁移 ==="
+npx prisma migrate deploy
+
+# 启动服务
 export PORT=5000
 export NODE_ENV=production
 exec node dist/main.js
