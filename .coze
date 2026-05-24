@@ -1,6 +1,11 @@
 [project]
+sub_id = "3a7f1b2c"
+name = "trip-planner-collab"
 requires = ["nodejs-22"]
 project_type = "web"
+
+[preview]
+preview_enable = "disabled"
 
 [deploy]
 build = ["bash", "scripts/deploy-build.sh"]
