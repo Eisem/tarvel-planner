@@ -817,11 +817,7 @@ export function WorkbenchPage() {
                           style={dropTarget?.dayIndex === day && dropTarget.beforeMarkerId === item.markerId ? { outline: "2px solid #3b82f6" } : undefined}
                         >
                           <span>{getMarkerName(item.markerId)}</span>
-                          <div className="row-btns">
-                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "up")}>↑</button>
-                            <button className="item-remove" onClick={() => movePlanItem(item.markerId, day, "down")}>↓</button>
-                            <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>x</button>
-                          </div>
+                          <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>×</button>
                         </div>
                       ))}
                     </div>

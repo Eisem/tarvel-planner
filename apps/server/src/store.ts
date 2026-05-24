@@ -120,10 +120,18 @@ export async function listMarkers(roomId: string, memberId?: string) {
 }
 
 export async function deleteMarker(markerId: string) {
+  const inPlan = await prisma.planItem.count({ where: { markerId } });
+  if (inPlan > 0) {
+    throw new Error("MARKER_IN_PLAN");
+  }
   return prisma.marker.delete({ where: { id: markerId } });
 }
 
 export async function updateMarker(markerId: string, patch: Partial<MarkerInput>) {
+  const inPlan = await prisma.planItem.count({ where: { markerId } });
+  if (inPlan > 0) {
+    throw new Error("MARKER_IN_PLAN");
+  }
   const existing = await prisma.marker.findUnique({ where: { id: markerId } });
   if (!existing) {
     throw new Error("MARKER_NOT_FOUND");
