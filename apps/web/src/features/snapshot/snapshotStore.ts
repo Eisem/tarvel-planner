@@ -4,6 +4,17 @@ export interface PlanItemDraft {
   orderIndex: number;
 }
 
+export interface SnapshotMarker {
+  markerId: string;
+  placeName: string;
+  lng: number;
+  lat: number;
+  budget?: number;
+  note?: string;
+  address?: string;
+  poiId?: string;
+}
+
 export interface DraftSnapshot {
   id: string;
   roomCode: string;
@@ -11,6 +22,7 @@ export interface DraftSnapshot {
   sourcePlanId?: string;
   dayCount?: number;
   markerIds?: string[];
+  markerSnapshots?: SnapshotMarker[];
   planItems: PlanItemDraft[];
   createdAt: string;
   updatedAt: string;
@@ -44,6 +56,7 @@ export function createDraft(roomCode: string, title?: string): DraftSnapshot {
     title: title ?? `方案 ${new Date().toLocaleString("zh-CN")}`,
     dayCount: 3,
     markerIds: [],
+    markerSnapshots: [],
     planItems: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()

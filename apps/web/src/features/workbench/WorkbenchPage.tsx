@@ -5,7 +5,7 @@ import type { MarkerRow } from "../../services/api";
 import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/socket";
 import { MapCanvas, searchPoi } from "../map/MapCanvas";
 import type { PoiSelect } from "../map/MapCanvas";
-import { type DraftSnapshot, type PlanItemDraft, createDraft, loadDrafts, saveDrafts } from "../snapshot/snapshotStore";
+import { type DraftSnapshot, type PlanItemDraft, type SnapshotMarker, createDraft, loadDrafts, saveDrafts } from "../snapshot/snapshotStore";
 
 type DraftForm = {
   placeName: string;
@@ -55,6 +55,11 @@ export function WorkbenchPage() {
 
   const mapInstanceRef = useRef<unknown>(null);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
+  const selectedMarker = useMemo(() => markers.find((marker) => marker.id === selectedMarkerId) ?? null, [markers, selectedMarkerId]);
+  const canEditSelectedMarker = useMemo(
+    () => !selectedMarker || selectedMarker.creatorNickname === memberNickname,
+    [selectedMarker, memberNickname]
+  );
   const activeDraftMarkerIds = useMemo(() => {
     if (!activeDraft) return markers.map((m) => m.id);
     if (activeDraft.markerIds && activeDraft.markerIds.length > 0) return activeDraft.markerIds;
@@ -63,15 +68,40 @@ export function WorkbenchPage() {
     }
     return markers.map((m) => m.id);
   }, [activeDraft, markers]);
-  const activeDraftMarkerList = useMemo(
-    () => markers.filter((marker) => activeDraftMarkerIds.includes(marker.id)),
-    [markers, activeDraftMarkerIds]
-  );
+  const activeDraftMarkerList = useMemo<SnapshotMarker[]>(() => {
+    if (!activeDraft) return [];
+    if (activeDraft.markerSnapshots && activeDraft.markerSnapshots.length > 0) {
+      return activeDraft.markerSnapshots;
+    }
+    return markers
+      .filter((marker) => activeDraftMarkerIds.includes(marker.id))
+      .map((marker) => ({
+        markerId: marker.id,
+        placeName: marker.placeName,
+        lng: marker.lng,
+        lat: marker.lat,
+        budget: marker.budget,
+        note: marker.note
+      }));
+  }, [activeDraft, markers, activeDraftMarkerIds]);
   const markersForMap = useMemo(() => {
     if (leftTab !== "snapshots" || !activeDraft) return markers;
+    if (activeDraftMarkerList.length > 0) {
+      return activeDraftMarkerList.map((item, index) => ({
+        id: item.markerId || `snapshot-${index}`,
+        memberId,
+        creatorNickname: memberNickname,
+        color: memberColor,
+        placeName: item.placeName,
+        lng: item.lng,
+        lat: item.lat,
+        budget: item.budget,
+        note: item.note
+      }));
+    }
     const selected = new Set(activeDraftMarkerIds);
     return markers.filter((marker) => selected.has(marker.id));
-  }, [activeDraft, activeDraftMarkerIds, markers, leftTab]);
+  }, [activeDraft, activeDraftMarkerIds, activeDraftMarkerList, leftTab, markers, memberColor, memberId, memberNickname]);
   const activeDayCount = activeDraft?.dayCount ?? 3;
   const dayIndexes = useMemo(() => Array.from({ length: activeDayCount }, (_, idx) => idx + 1), [activeDayCount]);
 
@@ -118,6 +148,7 @@ export function WorkbenchPage() {
       setSelectedForSnapshot([]);
       setDraftForm(null);
       setError("");
+      setActiveDraftId("");
       if (roomId) {
         refreshMarkers(roomId).catch(() => undefined);
       }
@@ -183,12 +214,6 @@ export function WorkbenchPage() {
   }, [memberId, roomCode, roomId, refreshMarkers, refreshSharedPlans]);
 
   useEffect(() => {
-    if (!activeDraftId && drafts.length > 0) {
-      setActiveDraftId(drafts[0].id);
-    }
-  }, [activeDraftId, drafts]);
-
-  useEffect(() => {
     if (leftTab !== "snapshots") return;
     if (drafts.length === 0) {
       setActiveDraftId("");
@@ -218,6 +243,14 @@ export function WorkbenchPage() {
     }
     const draft = createDraft(roomCode, `方案 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
     draft.markerIds = picked.slice(0, 60).map((marker) => marker.id);
+    draft.markerSnapshots = picked.slice(0, 60).map((marker) => ({
+      markerId: marker.id,
+      placeName: marker.placeName,
+      lng: marker.lng,
+      lat: marker.lat,
+      budget: marker.budget,
+      note: marker.note
+    }));
     draft.planItems = [];
     const next = [draft, ...drafts];
     persistDrafts(next);
@@ -337,21 +370,39 @@ export function WorkbenchPage() {
 
   async function saveMarker() {
     if (!draftForm || !memberId || !roomId) return;
+    if (!canEditSelectedMarker) {
+      setError("只能编辑自己创建的标点");
+      return;
+    }
     try {
       setSaving(true);
       setError("");
-      await api.createMarker(roomId, {
-        memberId,
-        placeName: draftForm.placeName.trim(),
-        lng: draftForm.lng,
-        lat: draftForm.lat,
-        address: draftForm.address,
-        poiId: draftForm.poiId,
-        budget: draftForm.budget,
-        note: draftForm.note
-      });
+      if (selectedMarkerId && markers.some((m) => m.id === selectedMarkerId && m.creatorNickname === memberNickname)) {
+        await api.updateMarker(selectedMarkerId, {
+          memberId,
+          placeName: draftForm.placeName.trim(),
+          lng: draftForm.lng,
+          lat: draftForm.lat,
+          address: draftForm.address,
+          poiId: draftForm.poiId,
+          budget: draftForm.budget,
+          note: draftForm.note
+        });
+      } else {
+        await api.createMarker(roomId, {
+          memberId,
+          placeName: draftForm.placeName.trim(),
+          lng: draftForm.lng,
+          lat: draftForm.lat,
+          address: draftForm.address,
+          poiId: draftForm.poiId,
+          budget: draftForm.budget,
+          note: draftForm.note
+        });
+      }
       await refreshMarkers(roomId);
       setDraftForm(null);
+      setSelectedMarkerId("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存标点失败");
     } finally {
@@ -407,10 +458,37 @@ export function WorkbenchPage() {
         title: activeDraft.title
       });
 
+      const markerIdMap = new Map<string, string>();
+      const markerById = new Map(markers.map((marker) => [marker.id, marker]));
+      const snapshotById = new Map((activeDraft.markerSnapshots ?? []).map((snapshot) => [snapshot.markerId, snapshot]));
+
+      for (const item of activeDraft.planItems) {
+        if (markerIdMap.has(item.markerId)) continue;
+        const live = markerById.get(item.markerId);
+        if (live) {
+          markerIdMap.set(item.markerId, live.id);
+          continue;
+        }
+        const snapshot = snapshotById.get(item.markerId);
+        if (!snapshot) continue;
+        const recreated = await api.createMarker(roomId, {
+          memberId,
+          placeName: snapshot.placeName,
+          lng: snapshot.lng,
+          lat: snapshot.lat,
+          address: snapshot.address,
+          poiId: snapshot.poiId,
+          budget: snapshot.budget,
+          note: snapshot.note
+        });
+        markerIdMap.set(item.markerId, (recreated as { id: string }).id);
+      }
+
       for (const item of activeDraft.planItems) {
         const startHour = 8 + (item.orderIndex % 9);
+        const usableMarkerId = markerIdMap.get(item.markerId) ?? item.markerId;
         await api.createPlanItem(created.id, {
-          markerId: item.markerId,
+          markerId: usableMarkerId,
           dayIndex: item.dayIndex,
           startTime: `2026-07-${String(item.dayIndex).padStart(2, "0")}T${String(startHour).padStart(2, "0")}:00:00Z`,
           endTime: `2026-07-${String(item.dayIndex).padStart(2, "0")}T${String(startHour + 1).padStart(2, "0")}:00:00Z`,
@@ -474,6 +552,8 @@ export function WorkbenchPage() {
   }
 
   function getMarkerName(markerId: string) {
+    const fromSnapshot = activeDraft?.markerSnapshots?.find((marker) => marker.markerId === markerId)?.placeName;
+    if (fromSnapshot) return fromSnapshot;
     return markers.find((marker) => marker.id === markerId)?.placeName ?? "(已失效地点)";
   }
 
@@ -561,8 +641,9 @@ export function WorkbenchPage() {
                     <label><span>预算（可选）</span><input type="number" value={draftForm.budget ?? ""} onChange={(event) => setDraftForm({ ...draftForm, budget: event.target.value ? Number(event.target.value) : undefined })} /></label>
                     <label><span>备注（可选）</span><input value={draftForm.note ?? ""} onChange={(event) => setDraftForm({ ...draftForm, note: event.target.value })} /></label>
                     <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
+                    {!canEditSelectedMarker ? <p className="page-note">该标点属于其他成员，仅可查看。</p> : null}
                     <div className="row-btns">
-                      <button className="btn btn-primary btn-sm" disabled={saving || !draftForm.placeName.trim()} onClick={saveMarker}>{saving ? "保存中" : "保存"}</button>
+                      <button className="btn btn-primary btn-sm" disabled={saving || !draftForm.placeName.trim() || !canEditSelectedMarker} onClick={saveMarker}>{saving ? "保存中" : "保存"}</button>
                       <button className="btn btn-sm" onClick={() => setDraftForm(null)}>取消</button>
                     </div>
                   </div>
@@ -590,6 +671,13 @@ export function WorkbenchPage() {
                         onDragStart={(event) => event.dataTransfer.setData("markerId", marker.id)}
                         onClick={() => {
                           setSelectedMarkerId(marker.id);
+                          setDraftForm({
+                            placeName: marker.placeName,
+                            lng: marker.lng,
+                            lat: marker.lat,
+                            budget: marker.budget,
+                            note: marker.note
+                          });
                           const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
                           if (map) {
                             map.setCenter([marker.lng, marker.lat]);
@@ -701,12 +789,12 @@ export function WorkbenchPage() {
                   {placeListExpanded ? (
                     <ul className="planner-place-list">
                       {activeDraftMarkerList.map((marker) => (
-                        <li key={marker.id}>
+                        <li key={marker.markerId}>
                           <button
                             className="planner-place-item"
                             draggable
                             onDragStart={(event) => {
-                              event.dataTransfer.setData("markerId", marker.id);
+                              event.dataTransfer.setData("markerId", marker.markerId);
                               setDropTarget(null);
                             }}
                           >
@@ -745,8 +833,8 @@ export function WorkbenchPage() {
 
         <aside className="wb-right">
           <h4>行程编排</h4>
-          {!activeDraft ? (
-            <p className="page-note">先在左侧创建或打开本地方案，然后把地点拖入对应日期。</p>
+          {leftTab !== "snapshots" || !activeDraft ? (
+            <p className="page-note">请先进入方案管理并打开一个本地方案，再进行行程编排。</p>
           ) : (
             <>
               <input

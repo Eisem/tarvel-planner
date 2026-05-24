@@ -82,7 +82,7 @@ export const api = {
     priority?: "LOW" | "MEDIUM" | "HIGH";
     note?: string;
   }) {
-    return req(`/rooms/${roomId}/markers`, {
+    return req<MarkerRow>(`/rooms/${roomId}/markers`, {
       method: "POST",
       body: JSON.stringify(payload)
     });
