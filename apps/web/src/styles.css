@@ -203,7 +203,8 @@ input:focus {
 .workbench-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .wb-header {
@@ -273,6 +274,8 @@ input:focus {
   gap: 10px;
   padding: 10px;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .wb-left,
@@ -289,6 +292,11 @@ input:focus {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
+}
+
+.wb-center {
+  overflow: hidden;
 }
 
 .wb-tabs {
