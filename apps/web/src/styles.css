@@ -225,6 +225,12 @@ input:focus {
   font-size: 21px;
 }
 
+.wb-header-right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .room-code {
   margin: 0;
   font-size: 13px;
@@ -297,6 +303,27 @@ input:focus {
 
 .wb-center {
   overflow: hidden;
+}
+
+.map-user-card {
+  padding: 8px 10px;
+  border: 1px solid rgba(168, 193, 227, 0.95);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 18px rgba(15, 39, 69, 0.12);
+  backdrop-filter: blur(6px);
+  display: grid;
+  gap: 2px;
+}
+
+.map-user-card span {
+  font-size: 11px;
+  color: #5f7ea3;
+}
+
+.map-user-card strong {
+  font-size: 13px;
+  color: #11243d;
 }
 
 .wb-tabs {
@@ -1196,6 +1223,20 @@ input:focus {
 
   .amap-canvas.workbench-map {
     min-height: 420px;
+  }
+
+  .wb-header {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .wb-header-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .map-user-card {
+    padding: 7px 9px;
   }
 
   .panel-grid,

@@ -486,7 +486,7 @@ export function WorkbenchPage() {
       setError("");
       const created = await api.createPlan(roomId, {
         creatorMemberId: memberId,
-        title: activeDraft.title
+        title: memberNickname ? `${memberNickname} - ${activeDraft.title}` : activeDraft.title
       });
 
       const markerIdMap = new Map<string, string>();
@@ -599,6 +599,21 @@ export function WorkbenchPage() {
     return grouped;
   }, [previewShared]);
 
+  function getNextUnnamedPlaceName() {
+    const unnamedNames = markers
+      .map((marker) => marker.placeName.trim())
+      .filter((name) => name === "未命名地点" || /^未命名地点\d+$/.test(name));
+    if (unnamedNames.length === 0) return "未命名地点1";
+    let maxIndex = 0;
+    unnamedNames.forEach((name) => {
+      const matched = name.match(/^未命名地点(\d+)$/);
+      if (matched) {
+        maxIndex = Math.max(maxIndex, Number(matched[1]));
+      }
+    });
+    return `未命名地点${maxIndex + 1}`;
+  }
+
   return (
     <div className="app-bg workbench-shell">
       <div className="orb orb-a" />
@@ -621,7 +636,11 @@ export function WorkbenchPage() {
           </p>
           <h1>{roomName || "未命名房间"}</h1>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div className="wb-header-right">
+          <div className="map-user-card" aria-label="当前用户">
+            <span>当前用户</span>
+            <strong>{memberNickname || "未设置昵称"}</strong>
+          </div>
           <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>共享方案</Link>
           <Link className="btn" to="/">返回首页</Link>
         </div>
@@ -840,7 +859,9 @@ export function WorkbenchPage() {
                 setError("方案管理中不可新增标点，请先切回地点池");
                 return;
               }
-              setDraftForm({ placeName: address || "未命名地点", lng, lat, address });
+              const trimmedAddress = (address || "").trim();
+              const placeName = trimmedAddress || getNextUnnamedPlaceName();
+              setDraftForm({ placeName, lng, lat, address: trimmedAddress || undefined });
             }}
             onMarkerClick={(marker) => setSelectedMarkerId(marker.id)}
           />

@@ -109,7 +109,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
           const lat = lnglat.getLat();
           new win.AMap.Geocoder().getAddress([lng, lat], (_s, r) => {
             const addr = (r?.regeocode as Record<string, unknown> | undefined)?.formattedAddress as string | undefined;
-            onMapClick(lng, lat, addr ?? "未命名地点");
+            onMapClick(lng, lat, addr ?? "");
           });
         });
       } catch { /* ignored */ }
