@@ -71,6 +71,7 @@ export function WorkbenchPage() {
     originEnd: number;
   } | null>(null);
   const [frozenAnchorCenter, setFrozenAnchorCenter] = useState<number | null>(null);
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
   const [poiSearchResults, setPoiSearchResults] = useState<PoiSelect[]>([]);
   const [poiSearchTotal, setPoiSearchTotal] = useState(0);
@@ -116,6 +117,26 @@ export function WorkbenchPage() {
     });
     (activeDraft?.markerSnapshots ?? []).forEach((snapshot) => {
       map.set(snapshot.markerId, { lng: snapshot.lng, lat: snapshot.lat, placeName: snapshot.placeName });
+    });
+    return map;
+  }, [markers, activeDraft]);
+  const markerMetaById = useMemo(() => {
+    const map = new Map<string, { budget?: number; note?: string; creatorNickname?: string }>();
+    markers.forEach((marker) => {
+      map.set(marker.id, {
+        budget: marker.budget,
+        note: marker.note,
+        creatorNickname: marker.creatorNickname
+      });
+    });
+    (activeDraft?.markerSnapshots ?? []).forEach((snapshot) => {
+      if (!map.has(snapshot.markerId)) {
+        map.set(snapshot.markerId, {
+          budget: snapshot.budget,
+          note: snapshot.note,
+          creatorNickname: undefined
+        });
+      }
     });
     return map;
   }, [markers, activeDraft]);
@@ -375,6 +396,15 @@ export function WorkbenchPage() {
     const hours = Math.floor(normalized / 60);
     const minutes = normalized % 60;
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  function noteKey(dayIndex: number, markerId: string) {
+    return `${dayIndex}:${markerId}`;
+  }
+
+  function shortNote(note: string, max = 60) {
+    if (note.length <= max) return note;
+    return `${note.slice(0, max)}...`;
   }
 
   function persistDrafts(next: DraftSnapshot[]) {
@@ -1302,6 +1332,32 @@ export function WorkbenchPage() {
                       <article className="timeline-event-card">
                         <strong>{item.orderIndex}. {getMarkerName(item.markerId)}</strong>
                         <small>{formatMinutes(entry.start)}-{formatMinutes(entry.end)}</small>
+                        {(() => {
+                          const meta = markerMetaById.get(item.markerId);
+                          const budgetText = meta?.budget !== undefined ? `¥${meta.budget}` : "-";
+                          const creatorText = meta?.creatorNickname ?? "未知";
+                          const noteText = (meta?.note ?? "").trim();
+                          const key = noteKey(activeTimelineDay, item.markerId);
+                          const expanded = Boolean(expandedNotes[key]);
+                          const longNote = noteText.length > 60;
+                          const inlineNote = noteText ? (expanded ? noteText : shortNote(noteText, 60)) : "-";
+                          return (
+                            <>
+                              <small className="timeline-meta-line">
+                                预算 {budgetText} · 创建者 {creatorText} · 备注 {inlineNote}
+                                {longNote ? (
+                                  <button
+                                    type="button"
+                                    className="timeline-note-toggle"
+                                    onClick={() => setExpandedNotes((prev) => ({ ...prev, [key]: !expanded }))}
+                                  >
+                                    {expanded ? "收起" : "展开"}
+                                  </button>
+                                ) : null}
+                              </small>
+                            </>
+                          );
+                        })()}
                       </article>
                       <button className="item-remove" onClick={() => removePlanItem(item.markerId, activeTimelineDay)}>×</button>
                       </div>

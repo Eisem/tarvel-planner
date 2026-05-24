@@ -1232,6 +1232,7 @@ input:focus {
   background: #fff;
   border-radius: 12px;
   padding: 8px 10px;
+  margin-right: 16px;
   display: grid;
   gap: 2px;
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
@@ -1245,6 +1246,23 @@ input:focus {
 .timeline-event-card small {
   font-size: 11px;
   color: #315f9f;
+}
+
+.timeline-meta-line {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-note-toggle {
+  margin-left: 6px;
+  border: none;
+  background: transparent;
+  color: #1e40af;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
 }
 
 .timeline-node-main {
@@ -1278,7 +1296,7 @@ input:focus {
 .item-remove {
   position: absolute;
   top: 3px;
-  right: 4px;
+  right: 20px;
   border: none;
   background: transparent;
   border-radius: 4px;
