@@ -780,8 +780,12 @@ export function WorkbenchPage() {
             <span>协作身份</span>
             <strong>{memberNickname || "未设置昵称"}</strong>
           </div>
-          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>进入投票页</Link>
-          <Link className="btn" to="/">返回首页</Link>
+          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>共享方案列表</Link>
+          <button className="btn" onClick={() => {
+            if (window.confirm("确定要退出当前房间吗？")) {
+              window.location.href = "/";
+            }
+          }}>退出房间</button>
         </div>
       </motion.header>
 
