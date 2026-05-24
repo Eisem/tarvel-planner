@@ -39,7 +39,7 @@ const win = window as unknown as {
     Geocoder: new () => { getAddress: (pos: number[], cb: (s: string, r: Record<string, unknown>) => void) => void };
     Marker: new (o: Record<string, unknown>) => { setMap: (m: unknown) => void; on: (e: string, fn: () => void) => void; getPosition: () => unknown };
     Pixel: new (x: number, y: number) => unknown;
-    InfoWindow: new (o: Record<string, unknown>) => { setContent: (c: string) => void; open: (m: unknown, p: unknown) => void };
+    InfoWindow: new (o: Record<string, unknown>) => { setContent: (c: string) => void; open: (m: unknown, p: unknown) => void; close: () => void };
     PlaceSearch: new (o: Record<string, unknown>) => { search: (kw: string, cb: (s: string, r: Record<string, unknown>) => void) => void };
   }
 };
@@ -93,6 +93,9 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, onMapReady, 
         onMapReady(map);
 
         map.on("click", (e) => {
+          if (infoWindowRef.current) {
+            infoWindowRef.current.close();
+          }
           const lnglat = e.lnglat as { getLng: () => number; getLat: () => number };
           const lng = lnglat.getLng();
           const lat = lnglat.getLat();

@@ -452,6 +452,10 @@ input:focus {
   padding: 10px;
 }
 
+.draft-box.editing {
+  border-left: 3px solid #fbbf24;
+}
+
 .draft-box h4 {
   margin: 0 0 6px;
 }

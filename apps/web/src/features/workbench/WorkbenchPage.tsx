@@ -40,6 +40,7 @@ export function WorkbenchPage() {
   const [selectedMarkerId, setSelectedMarkerId] = useState("");
   const [selectedForSnapshot, setSelectedForSnapshot] = useState<string[]>([]);
   const [draftForm, setDraftForm] = useState<DraftForm | null>(null);
+  const [editingMarkerId, setEditingMarkerId] = useState("");
   const [drafts, setDrafts] = useState<DraftSnapshot[]>([]);
   const [activeDraftId, setActiveDraftId] = useState("");
   const [sharedPlans, setSharedPlans] = useState<Array<{ id: string; title: string; creatorMemberId: string }>>([]);
@@ -299,10 +300,15 @@ export function WorkbenchPage() {
 
   async function saveMarker() {
     if (!draftForm || !memberId || !roomId) return;
+    if (editingMarkerId && !markers.find((m) => m.id === editingMarkerId)) {
+      setError("该标点已被删除，请重新创建");
+      setEditingMarkerId("");
+      return;
+    }
     try {
       setSaving(true);
       setError("");
-      await api.createMarker(roomId, {
+      const payload = {
         memberId,
         placeName: draftForm.placeName.trim(),
         lng: draftForm.lng,
@@ -311,9 +317,15 @@ export function WorkbenchPage() {
         poiId: draftForm.poiId,
         budget: draftForm.budget,
         note: draftForm.note
-      });
+      };
+      if (editingMarkerId) {
+        await api.updateMarker(editingMarkerId, payload);
+      } else {
+        await api.createMarker(roomId, payload);
+      }
       await refreshMarkers(roomId);
       setDraftForm(null);
+      setEditingMarkerId("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存标点失败");
     } finally {
@@ -340,6 +352,7 @@ export function WorkbenchPage() {
       setSearching(true);
       setError("");
       const result = await searchPoi(mapInstanceRef.current, searchKeyword, (poi: PoiSelect) => {
+        setEditingMarkerId("");
         setDraftForm({ placeName: poi.placeName, lng: poi.lng, lat: poi.lat, address: poi.address, poiId: poi.poiId });
       });
       if (!result.first) {
@@ -520,8 +533,8 @@ export function WorkbenchPage() {
               </div>
 
               {draftForm ? (
-                <div className="draft-box">
-                  <h4>标点编辑</h4>
+                <div className={`draft-box${editingMarkerId ? " editing" : ""}`}>
+                  <h4>{editingMarkerId ? `编辑：${draftForm?.placeName ?? ""}` : "新增标点"}</h4>
                   <div className="draft-grid">
                     <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
                     <label><span>预算（可选）</span><input type="number" value={draftForm.budget ?? ""} onChange={(event) => setDraftForm({ ...draftForm, budget: event.target.value ? Number(event.target.value) : undefined })} /></label>
@@ -529,7 +542,7 @@ export function WorkbenchPage() {
                     <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
                     <div className="row-btns">
                       <button className="btn btn-primary btn-sm" disabled={saving || !draftForm.placeName.trim()} onClick={saveMarker}>{saving ? "保存中" : "保存"}</button>
-                      <button className="btn btn-sm" onClick={() => setDraftForm(null)}>取消</button>
+                      <button className="btn btn-sm" onClick={() => { setDraftForm(null); setEditingMarkerId(""); }}>取消</button>
                     </div>
                   </div>
                 </div>
@@ -569,7 +582,25 @@ export function WorkbenchPage() {
                         <small>{marker.lng.toFixed(4)}, {marker.lat.toFixed(4)}</small>
                       </button>
                       {marker.memberId === memberId ? (
-                        <button className="btn btn-sm" onClick={() => deleteMarker(marker.id)}>删除</button>
+                        <div className="row-btns">
+                          <button className="btn btn-sm" onClick={() => {
+                            setDraftForm({
+                              placeName: marker.placeName,
+                              lng: marker.lng,
+                              lat: marker.lat,
+                              budget: marker.budget ?? undefined,
+                              note: marker.note ?? undefined
+                            });
+                            setEditingMarkerId(marker.id);
+                            setSelectedMarkerId(marker.id);
+                            const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
+                            if (map) {
+                              map.setCenter([marker.lng, marker.lat]);
+                              map.setZoom(14);
+                            }
+                          }}>编辑</button>
+                          <button className="btn btn-sm" onClick={() => deleteMarker(marker.id)}>删除</button>
+                        </div>
                       ) : null}
                     </div>
                   </li>
@@ -649,8 +680,21 @@ export function WorkbenchPage() {
             onMapReady={(map) => {
               mapInstanceRef.current = map;
             }}
-            onMapClick={(lng, lat, address) => setDraftForm({ placeName: address || "未命名地点", lng, lat, address })}
-            onMarkerClick={(marker) => setSelectedMarkerId(marker.id)}
+            onMapClick={(lng, lat, address) => {
+              setEditingMarkerId("");
+              setDraftForm({ placeName: address || "未命名地点", lng, lat, address });
+            }}
+            onMarkerClick={(marker) => {
+              setSelectedMarkerId(marker.id);
+              setEditingMarkerId(marker.id);
+              setDraftForm({
+                placeName: marker.placeName,
+                lng: marker.lng,
+                lat: marker.lat,
+                budget: marker.budget ?? undefined,
+                note: marker.note ?? undefined
+              });
+            }}
           />
         </main>
 

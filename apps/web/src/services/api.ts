@@ -92,6 +92,21 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
+  updateMarker(markerId: string, payload: {
+    memberId: string;
+    placeName?: string;
+    budget?: number;
+    note?: string;
+    lng?: number;
+    lat?: number;
+    poiId?: string;
+    address?: string;
+  }) {
+    return req<MarkerRow>(`/markers/${markerId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  },
   listPlans(roomId: string) {
     return req<PlanRow[]>(`/rooms/${roomId}/plans`);
   },
