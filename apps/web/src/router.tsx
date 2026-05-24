@@ -1,14 +1,15 @@
 import { Route, Routes, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { api } from "./services/api";
 import { WorkbenchPage } from "./features/workbench/WorkbenchPage";
 import { VotingPage } from "./features/voting/VotingPage";
 import type { ReactNode } from "react";
 
 const quickStats = [
-  { label: "看得见的共识", value: "每个人的意愿都落在地图上，而不是淹没在消息里。" },
-  { label: "改得动的方案", value: "快照分支编辑，不满意就重排，满意再推送。" },
-  { label: "复用式协作", value: "别人方案一键另存，改完再发，团队决策不断迭代。" }
+  { label: "地图共创", value: "所有候选地点在同一张图上讨论，空间关系一眼看懂。" },
+  { label: "拖拽排程", value: "按天编排路线，随时调整顺序，不用反复复制粘贴。" },
+  { label: "投票定稿", value: "一键推送候选方案，团队投票后直接收敛到最终版本。" }
 ];
 
 function AppShell({ children }: { children: ReactNode }) {
@@ -29,6 +30,13 @@ function HomePage() {
   const [roomCode, setRoomCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    document.body.classList.add("home-lock-scroll");
+    return () => {
+      document.body.classList.remove("home-lock-scroll");
+    };
+  }, []);
 
   function openModal(type: "create" | "join") {
     setNickname("");
@@ -75,35 +83,49 @@ function HomePage() {
 
   return (
     <AppShell>
-      <main className="landing">
-        <section className="hero">
-          <p className="tag">协同决策系统</p>
-          <h1>把"群聊做攻略"升级为"协同做决策"</h1>
-          <p className="subline">
-            多人地图标注 + 方案拖拽排程 + 共享迭代，3 分钟产出可执行旅行计划。
-          </p>
+      <main className="landing-dashboard">
+        <section className="landing-content">
+          <section className="hero">
+          <motion.p className="tag" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+            TRIP PLANNER COLLAB
+          </motion.p>
+          <motion.h1 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.08 }}>
+            用共享地图和投票流程，
+            <br />
+            把旅行想法变成可执行行程
+          </motion.h1>
+          <motion.p className="subline" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.12 }}>
+            从收集地点、编排日程到全员投票，围绕同一套数据协作，减少沟通损耗，提升决策效率。
+          </motion.p>
           <div className="stat-grid">
-            {quickStats.map((item) => (
-              <article key={item.label} className="stat-card">
+            {quickStats.map((item, index) => (
+              <motion.article
+                key={item.label}
+                className="stat-card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.18 + index * 0.07 }}
+              >
                 <p>{item.label}</p>
                 <strong>{item.value}</strong>
-              </article>
+              </motion.article>
             ))}
           </div>
-        </section>
+          </section>
 
-        <section className="action-row">
-          <button className="action-card" onClick={() => openModal("create")}>
+          <motion.section className="action-row" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.28 }}>
+            <button className="action-card" onClick={() => openModal("create")}>
             <span className="action-icon">+</span>
-            <strong>创建协作房间</strong>
-            <small>发起新行程，邀请队友一起规划</small>
-          </button>
+            <strong>新建协作空间</strong>
+            <small>作为组织者创建房间并发起路线设计</small>
+            </button>
 
-          <button className="action-card" onClick={() => openModal("join")}>
+            <button className="action-card" onClick={() => openModal("join")}>
             <span className="action-icon">→</span>
-            <strong>加入现有房间</strong>
-            <small>输入房间码，立即参与共创</small>
-          </button>
+            <strong>进入已有空间</strong>
+            <small>输入房间码，继续团队协同编排</small>
+            </button>
+          </motion.section>
         </section>
       </main>
 
@@ -112,9 +134,9 @@ function HomePage() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={closeModal}>×</button>
 
-            <h2>{modal === "create" ? "创建协作房间" : "加入现有房间"}</h2>
+            <h2>{modal === "create" ? "创建新空间" : "加入协作空间"}</h2>
             <p className="modal-desc">
-              {modal === "create" ? "发起一个新的旅行协作空间" : "输入房间码加入已有协作"}
+              {modal === "create" ? "填写身份后即可开启多人规划" : "输入房间码快速进入团队会话"}
             </p>
 
             <label>

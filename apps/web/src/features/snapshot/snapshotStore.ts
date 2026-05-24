@@ -2,6 +2,7 @@ export interface PlanItemDraft {
   markerId: string;
   dayIndex: number;
   orderIndex: number;
+  stopMinutes?: number;
 }
 
 export interface SnapshotMarker {

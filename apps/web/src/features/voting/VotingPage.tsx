@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { motion } from "motion/react";
 import { api } from "../../services/api";
 import type { MarkerRow, PlanItemRow } from "../../services/api";
 import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/socket";
@@ -207,7 +208,7 @@ export function VotingPage() {
       <div className="orb orb-a" />
       <div className="orb orb-b" />
 
-      <header className="wb-header">
+      <motion.header className="wb-header" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <div>
           <p className="room-code">
             房间码
@@ -222,12 +223,13 @@ export function VotingPage() {
               复制
             </button>
           </p>
+          <h1>方案投票与结果</h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}`}>返回工作台</Link>
+          <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}`}>返回编排台</Link>
           <Link className="btn" to="/">返回首页</Link>
         </div>
-      </header>
+      </motion.header>
 
       {loading ? <p className="page-note wb-message">加载中...</p> : null}
       {error ? <p className="error-text wb-message">{error}</p> : null}
@@ -236,11 +238,11 @@ export function VotingPage() {
         <div className={`toast toast-${toast.type}`}>{toast.message}</div>
       )}
 
-      <div className="vote-layout">
+      <motion.div className="vote-layout" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
         <main className="vote-main">
-          <h2>共享方案列表</h2>
+          <h2>候选方案</h2>
           {plans.length === 0 ? (
-            <p className="page-note">暂无共享方案，请先在工作台中推送方案。</p>
+            <p className="page-note">暂时没有候选方案，请先在编排台推送。</p>
           ) : (
             <div className="vote-plan-list">
               {plans.map((plan) => {
@@ -281,7 +283,7 @@ export function VotingPage() {
         </main>
 
         <aside className="vote-leaderboard">
-          <h2>排行榜</h2>
+          <h2>投票看板</h2>
           <p className="page-note">房间共 {memberCount} 人</p>
           <div className="leaderboard-list">
             {sortedResults.map((vr) => {
@@ -314,7 +316,7 @@ export function VotingPage() {
             )}
           </div>
         </aside>
-      </div>
+      </motion.div>
 
       {modalPlanId ? (
         <div className="modal-overlay" onClick={closeModal}>
