@@ -34,6 +34,7 @@ export function WorkbenchPage() {
 
   const queryMemberId = search.get("memberId") ?? "";
   const queryNickname = search.get("nickname") ?? "";
+  const queryTab = search.get("tab") as "markers" | "snapshots" | null;
   const storageKey = useMemo(() => (roomCode ? `tp_member_${roomCode}` : ""), [roomCode]);
   const nicknameStorageKey = useMemo(() => (roomCode ? `tp_nickname_${roomCode}` : ""), [roomCode]);
   const [memberId, setMemberId] = useState("");
@@ -240,7 +241,10 @@ export function WorkbenchPage() {
     } else {
       setMemberNickname(localStorage.getItem(nicknameStorageKey) ?? "");
     }
-  }, [queryMemberId, queryNickname, roomCode, storageKey, nicknameStorageKey]);
+    if (queryTab) {
+      setLeftTab(queryTab);
+    }
+  }, [queryMemberId, queryNickname, queryTab, roomCode, storageKey, nicknameStorageKey]);
 
   const refreshMarkers = useCallback(async (targetRoomId: string) => {
     const rows = await api.listMarkers(targetRoomId);
@@ -922,7 +926,7 @@ export function WorkbenchPage() {
               复制
             </button>
           </div>
-          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>共享方案列表</Link>
+          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}&tab=${leftTab}`}>共享方案列表</Link>
           <button className="btn" onClick={() => {
             if (window.confirm("确定要退出当前房间吗？")) {
               window.location.href = "/";
@@ -1105,7 +1109,7 @@ export function WorkbenchPage() {
                 <div className="draft-cards">
                   {drafts.map((draft) => (
                     <article key={draft.id} className={activeDraftId === draft.id ? "draft-card active" : "draft-card"}>
-                      <button className="draft-open" onClick={() => setActiveDraftId(draft.id)}>
+                      <button className="draft-open" onClick={() => { setActiveDraftId(draft.id); setMapFitKey((n) => n + 1); }}>
                         <strong>{draft.title}</strong>
                         <small>{draft.planItems.length} 个行程点</small>
                       </button>

@@ -26,6 +26,7 @@ export function VotingPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const [search] = useSearchParams();
   const queryMemberId = search.get("memberId") ?? "";
+  const queryTab = search.get("tab") ?? "";
 
   const [memberId, setMemberId] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -49,9 +50,11 @@ export function VotingPage() {
     color: string;
   }> | undefined>(undefined);
   const [modalLoading, setModalLoading] = useState(false);
+  const [modalFitKey, setModalFitKey] = useState(0);
   const mapInstanceRef = useRef<unknown>(null);
 
-  const DAY_COLORS = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#0ea5e9", "#0284c7", "#0369a1"];
+  const DAY_COLORS = ["#e74c3c", "#2980b9", "#27ae60", "#f39c12", "#8e44ad", "#16a085", "#d35400"];
+  const SINGLE_STOP_COLOR = "#94a3b8";
   const DEFAULT_STOP_MINUTES = 60;
 
   function getDistanceKm(fromLng: number, fromLat: number, toLng: number, toLat: number) {
@@ -86,20 +89,20 @@ export function VotingPage() {
       color: string;
     }> = [];
     itemsByDay.forEach((dayItems, dayIndex) => {
-      if (dayItems.length < 2) return;
       const path: [number, number][] = [];
       const stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }> = [];
       const legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }> = [];
       dayItems.forEach((item, idx) => {
         const marker = markerList.find((m) => m.id === item.markerId);
         if (!marker) return;
+        const isFirst = stops.length === 0;
         path.push([marker.lng, marker.lat]);
         stops.push({
           lng: marker.lng,
           lat: marker.lat,
           label: String(item.orderIndex),
-          isFirst: idx === 0,
-          isLast: idx === dayItems.length - 1,
+          isFirst,
+          isLast: false,
           stopMinutes: DEFAULT_STOP_MINUTES
         });
         if (idx > 0) {
@@ -116,8 +119,10 @@ export function VotingPage() {
           }
         }
       });
-      if (path.length >= 2) {
-        routes.push({ dayIndex, path, stops, legs, color: DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
+      if (path.length >= 1) {
+        stops[stops.length - 1].isLast = true;
+        const isSingle = path.length === 1;
+        routes.push({ dayIndex, path, stops, legs, color: isSingle ? SINGLE_STOP_COLOR : DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
       }
     });
     return routes.length > 0 ? routes : undefined;
@@ -252,6 +257,7 @@ export function VotingPage() {
       const filtered = markers.filter((m) => planMarkerIds.has(m.id));
       setModalMarkers(filtered);
       setModalRoutePaths(buildRoutePaths(items, filtered));
+      setModalFitKey((n) => n + 1);
     } catch (e) {
       setToast({ message: e instanceof Error ? e.message : "加载预览失败", type: "error" });
     } finally {
@@ -332,7 +338,7 @@ export function VotingPage() {
               复制
             </button>
           </div>
-          <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}`}>返回编排台</Link>
+          <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}${queryTab ? `&tab=${queryTab}` : ""}`}>返回编排台</Link>
           <button className="btn" onClick={() => {
             if (window.confirm("确定要退出当前房间吗？")) {
               window.location.href = "/";
@@ -439,16 +445,31 @@ export function VotingPage() {
               {modalLoading ? (
                 <p className="page-note" style={{ padding: 40, textAlign: "center" }}>加载中...</p>
               ) : (
-                <MapCanvas
+                <>
+                  {modalRoutePaths && modalRoutePaths.length > 0 && (
+                    <div className="route-legend-card">
+                      <strong>路线图例</strong>
+                      <div className="route-legend-list">
+                        {modalRoutePaths.map((route) => (
+                          <span key={`legend-${route.dayIndex}`} className="route-legend-item">
+                            <i style={{ background: route.color }} />
+                            第{route.dayIndex}天 · {route.stops.length === 1 ? "1站" : `${route.stops.length}站`}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <MapCanvas
                   markers={modalMarkers}
                   routePaths={modalRoutePaths}
-                  fitKey={1}
+                  fitKey={modalFitKey}
                   draftMarker={null}
                   allowCreateMarker={false}
                   onMapReady={(map) => { mapInstanceRef.current = map; }}
                   onMapClick={() => {}}
                   onMarkerClick={() => {}}
                 />
+                </>
               )}
             </div>
           </div>
