@@ -1021,8 +1021,9 @@ export function WorkbenchPage() {
                     <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
                     <label><span>预算（可选）</span><input type="number" min="0" max="999999" step="1" value={draftForm.budget ?? 0} onChange={(event) => {
                       const v = Number(event.target.value);
-                      if (isNaN(v) || v < 0 || v > 999999) return;
-                      setDraftForm({ ...draftForm, budget: Math.round(v) || undefined });
+                      if (isNaN(v)) return;
+                      const clamped = Math.max(0, Math.min(999999, Math.round(v)));
+                      setDraftForm({ ...draftForm, budget: clamped || undefined });
                     }} /></label>
                     <label><span>备注（可选）</span><input value={draftForm.note ?? ""} onChange={(event) => setDraftForm({ ...draftForm, note: event.target.value })} /></label>
                     <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
