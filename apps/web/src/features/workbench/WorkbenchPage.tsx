@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import { api } from "../../services/api";
@@ -21,6 +22,11 @@ type DraftForm = {
 const MIN_DAYS = 1;
 const MAX_DAYS = 14;
 const DEFAULT_STOP_MINUTES = 60;
+const DEFAULT_START_MINUTES = 9 * 60;
+const MIN_DURATION_MINUTES = 15;
+const SNAP_MINUTES = 15;
+const DAY_MINUTES = 24 * 60;
+const TIMELINE_PIXEL_HEIGHT = 520;
 
 export function WorkbenchPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -54,8 +60,17 @@ export function WorkbenchPage() {
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [snapshotMode, setSnapshotMode] = useState(false);
-  const [dropTarget, setDropTarget] = useState<{ dayIndex: number; beforeMarkerId?: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ dayIndex: number } | null>(null);
   const [activeTimelineDay, setActiveTimelineDay] = useState(1);
+  const [draggingTimeline, setDraggingTimeline] = useState<{
+    markerId: string;
+    dayIndex: number;
+    mode: "move" | "start" | "end";
+    startY: number;
+    originStart: number;
+    originEnd: number;
+  } | null>(null);
+  const [frozenAnchorCenter, setFrozenAnchorCenter] = useState<number | null>(null);
 
   const [poiSearchResults, setPoiSearchResults] = useState<PoiSelect[]>([]);
   const [poiSearchTotal, setPoiSearchTotal] = useState(0);
@@ -63,6 +78,7 @@ export function WorkbenchPage() {
   const [mapFitKey, setMapFitKey] = useState(0);
 
   const mapInstanceRef = useRef<unknown>(null);
+  const timelineColumnRef = useRef<HTMLDivElement | null>(null);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
   const selectedMarker = useMemo(() => markers.find((marker) => marker.id === selectedMarkerId) ?? null, [markers, selectedMarkerId]);
   const canEditSelectedMarker = useMemo(
@@ -93,6 +109,16 @@ export function WorkbenchPage() {
         note: marker.note
       }));
   }, [activeDraft, markers, activeDraftMarkerIds]);
+  const markerLookup = useMemo(() => {
+    const map = new Map<string, { lng: number; lat: number; placeName: string }>();
+    markers.forEach((marker) => {
+      map.set(marker.id, { lng: marker.lng, lat: marker.lat, placeName: marker.placeName });
+    });
+    (activeDraft?.markerSnapshots ?? []).forEach((snapshot) => {
+      map.set(snapshot.markerId, { lng: snapshot.lng, lat: snapshot.lat, placeName: snapshot.placeName });
+    });
+    return map;
+  }, [markers, activeDraft]);
   const markersForMap = useMemo(() => {
     if (leftTab !== "snapshots" || !activeDraft) return markers;
     if (activeDraftMarkerList.length > 0) {
@@ -119,13 +145,29 @@ export function WorkbenchPage() {
     activeDraft.planItems.forEach((item) => {
       const list = grouped.get(item.dayIndex) ?? [];
       list.push(item);
-      grouped.set(item.dayIndex, list.sort((a, b) => a.orderIndex - b.orderIndex));
+      grouped.set(
+        item.dayIndex,
+        list.sort(
+          (a, b) =>
+            (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES) ||
+            a.orderIndex - b.orderIndex
+        )
+      );
     });
     return grouped;
   }, [activeDraft]);
   const timelineItems = useMemo(() => (draftItemsByDay.get(activeTimelineDay) ?? []), [draftItemsByDay, activeTimelineDay]);
 
   const DAY_COLORS = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#0ea5e9", "#0284c7", "#0369a1"];
+
+  const timelineSchedule = useMemo(() => {
+    return timelineItems.map((item) => {
+      const start = Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, item.startMinutes ?? DEFAULT_START_MINUTES));
+      const duration = Math.max(MIN_DURATION_MINUTES, Math.min(480, item.durationMinutes ?? item.stopMinutes ?? DEFAULT_STOP_MINUTES));
+      const end = Math.min(DAY_MINUTES, start + duration);
+      return { item, start, end, duration };
+    });
+  }, [timelineItems]);
 
   const routePaths = useMemo(() => {
     if (leftTab !== "snapshots") return undefined;
@@ -134,16 +176,15 @@ export function WorkbenchPage() {
       dayIndex: number;
       path: [number, number][];
       stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }>;
-      legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }>;
       color: string;
     }> = [];
     draftItemsByDay.forEach((items, dayIndex) => {
+      if (dayIndex !== activeTimelineDay) return;
       if (items.length < 2) return;
       const path: [number, number][] = [];
       const stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }> = [];
-      const legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }> = [];
       items.forEach((item, idx) => {
-        const marker = markers.find((m) => m.id === item.markerId);
+        const marker = markerLookup.get(item.markerId);
         if (marker) {
           path.push([marker.lng, marker.lat]);
           const stopMinutes = Math.max(15, item.stopMinutes ?? DEFAULT_STOP_MINUTES);
@@ -155,29 +196,14 @@ export function WorkbenchPage() {
             isLast: idx === items.length - 1,
             stopMinutes
           });
-
-          if (idx > 0) {
-            const prev = items[idx - 1];
-            const prevMarker = markers.find((m) => m.id === prev.markerId);
-            if (prevMarker) {
-              const distanceKm = getDistanceKm(prevMarker.lng, prevMarker.lat, marker.lng, marker.lat);
-              const travelMinutes = estimateTravelMinutes(distanceKm);
-              legs.push({
-                from: [prevMarker.lng, prevMarker.lat],
-                to: [marker.lng, marker.lat],
-                distanceKm,
-                travelMinutes
-              });
-            }
-          }
         }
       });
       if (path.length >= 2) {
-        routes.push({ dayIndex, path, stops, legs, color: DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
+        routes.push({ dayIndex, path, stops, color: DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
       }
     });
     return routes.length > 0 ? routes : undefined;
-  }, [activeDraft, draftItemsByDay, markers, leftTab]);
+  }, [activeDraft, draftItemsByDay, markerLookup, leftTab, activeTimelineDay]);
 
   useEffect(() => {
     if (!roomCode || !storageKey) return;
@@ -321,22 +347,34 @@ export function WorkbenchPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  function getDistanceKm(fromLng: number, fromLat: number, toLng: number, toLat: number) {
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-    const earthRadiusKm = 6371;
-    const dLat = toRad(toLat - fromLat);
-    const dLng = toRad(toLng - fromLng);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(fromLat)) * Math.cos(toRad(toLat)) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return earthRadiusKm * c;
+  function normalizeOrder(items: PlanItemDraft[]) {
+    return items
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES) ||
+          a.orderIndex - b.orderIndex
+      )
+      .map((item, idx) => ({ ...item, orderIndex: idx + 1 }));
   }
 
-  function estimateTravelMinutes(distanceKm: number) {
-    const cityAvgSpeedKmH = 30;
-    return Math.max(8, Math.round((distanceKm / cityAvgSpeedKmH) * 60));
+  function getMinutesFromDropEvent(event: DragEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - rect.top) / rect.height;
+    const minutes = Math.round(Math.max(0, Math.min(1, ratio)) * DAY_MINUTES);
+    const snapped = Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES;
+    return Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, snapped));
+  }
+
+  function snapMinutes(value: number) {
+    return Math.round(value / SNAP_MINUTES) * SNAP_MINUTES;
+  }
+
+  function formatMinutes(totalMinutes: number) {
+    const normalized = Math.max(0, Math.min(DAY_MINUTES, Math.round(totalMinutes)));
+    const hours = Math.floor(normalized / 60);
+    const minutes = normalized % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
   }
 
   function persistDrafts(next: DraftSnapshot[]) {
@@ -416,7 +454,9 @@ export function WorkbenchPage() {
       const remapped = draft.planItems.map((item) => ({
         ...item,
         dayIndex: Math.min(item.dayIndex, bounded),
-        stopMinutes: item.stopMinutes ?? DEFAULT_STOP_MINUTES
+        stopMinutes: item.stopMinutes ?? DEFAULT_STOP_MINUTES,
+        startMinutes: item.startMinutes ?? DEFAULT_START_MINUTES,
+        durationMinutes: item.durationMinutes ?? item.stopMinutes ?? DEFAULT_STOP_MINUTES
       }));
       const grouped = new Map<number, PlanItemDraft[]>();
       remapped.forEach((item) => {
@@ -427,36 +467,29 @@ export function WorkbenchPage() {
       const normalized: PlanItemDraft[] = [];
       grouped.forEach((list, day) => {
         list
-          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .sort((a, b) => (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES) || a.orderIndex - b.orderIndex)
           .forEach((item, idx) => normalized.push({ ...item, dayIndex: day, orderIndex: idx + 1 }));
       });
       return { ...draft, dayCount: bounded, planItems: normalized };
     });
   }
 
-  function handleDropOnDay(markerId: string, dayIndex: number) {
+  function handleDropOnDay(markerId: string, dayIndex: number, startMinutes: number) {
     if (!activeDraft) return;
 
     updateActiveDraft((draft) => {
       const without = draft.planItems.filter((item) => item.markerId !== markerId);
-      const dayItems = without.filter((item) => item.dayIndex === dayIndex).sort((a, b) => a.orderIndex - b.orderIndex);
-      dayItems.push({ markerId, dayIndex, orderIndex: dayItems.length + 1, stopMinutes: DEFAULT_STOP_MINUTES });
-      const others = without.filter((item) => item.dayIndex !== dayIndex);
-      return { ...draft, planItems: [...others, ...dayItems] };
-    });
-  }
-
-  function handleDropBefore(markerId: string, dayIndex: number, beforeMarkerId: string) {
-    if (!activeDraft) return;
-    if (markerId === beforeMarkerId) return;
-
-    updateActiveDraft((draft) => {
-      const without = draft.planItems.filter((item) => item.markerId !== markerId);
-      const dayItems = without.filter((item) => item.dayIndex === dayIndex).sort((a, b) => a.orderIndex - b.orderIndex);
-      const targetIndex = dayItems.findIndex((item) => item.markerId === beforeMarkerId);
-      const insertAt = targetIndex < 0 ? dayItems.length : targetIndex;
-      dayItems.splice(insertAt, 0, { markerId, dayIndex, orderIndex: insertAt + 1, stopMinutes: DEFAULT_STOP_MINUTES });
-      const normalized = dayItems.map((item, idx) => ({ ...item, orderIndex: idx + 1 }));
+      const dayItems = without.filter((item) => item.dayIndex === dayIndex);
+      const existing = draft.planItems.find((item) => item.markerId === markerId && item.dayIndex === dayIndex);
+      dayItems.push({
+        markerId,
+        dayIndex,
+        orderIndex: dayItems.length + 1,
+        stopMinutes: existing?.stopMinutes ?? DEFAULT_STOP_MINUTES,
+        durationMinutes: existing?.durationMinutes ?? existing?.stopMinutes ?? DEFAULT_STOP_MINUTES,
+        startMinutes
+      });
+      const normalized = normalizeOrder(dayItems);
       const others = without.filter((item) => item.dayIndex !== dayIndex);
       return { ...draft, planItems: [...others, ...normalized] };
     });
@@ -485,17 +518,80 @@ export function WorkbenchPage() {
     });
   }
 
-  function updateStopMinutes(markerId: string, dayIndex: number, value: number) {
-    const normalized = Math.max(15, Math.min(360, value));
-    updateActiveDraft((draft) => ({
-      ...draft,
-      planItems: draft.planItems.map((item) =>
+  function applyPlanItemTime(markerId: string, dayIndex: number, startMinutes: number, endMinutes: number, withSnap = false) {
+    let start = startMinutes;
+    let end = endMinutes;
+    if (withSnap) {
+      start = snapMinutes(start);
+      end = snapMinutes(end);
+    }
+    start = Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, start));
+    end = Math.min(DAY_MINUTES, Math.max(start + MIN_DURATION_MINUTES, end));
+
+    updateActiveDraft((draft) => {
+      const updated = draft.planItems.map((item) =>
         item.markerId === markerId && item.dayIndex === dayIndex
-          ? { ...item, stopMinutes: normalized }
+          ? {
+              ...item,
+              startMinutes: start,
+              durationMinutes: end - start,
+              stopMinutes: end - start
+            }
           : item
-      )
-    }));
+      );
+      const dayItems = normalizeOrder(updated.filter((item) => item.dayIndex === dayIndex));
+      const otherItems = updated.filter((item) => item.dayIndex !== dayIndex);
+      return { ...draft, planItems: [...otherItems, ...dayItems] };
+    });
   }
+
+  useEffect(() => {
+    if (!draggingTimeline) return;
+    const drag = draggingTimeline;
+
+    function handleMove(event: MouseEvent) {
+      const column = timelineColumnRef.current;
+      if (!column) return;
+      const minutesPerPixel = DAY_MINUTES / column.clientHeight;
+      const diffMinutes = (event.clientY - drag.startY) * minutesPerPixel;
+
+      if (drag.mode === "move") {
+        const duration = drag.originEnd - drag.originStart;
+        let nextStart = drag.originStart + diffMinutes;
+        nextStart = Math.max(0, Math.min(DAY_MINUTES - duration, nextStart));
+        const nextEnd = nextStart + duration;
+        applyPlanItemTime(drag.markerId, drag.dayIndex, nextStart, nextEnd, false);
+        return;
+      }
+
+      if (drag.mode === "start") {
+        const nextStart = Math.min(drag.originStart + diffMinutes, drag.originEnd - MIN_DURATION_MINUTES);
+        applyPlanItemTime(drag.markerId, drag.dayIndex, nextStart, drag.originEnd, false);
+        return;
+      }
+
+      const nextEnd = Math.max(drag.originEnd + diffMinutes, drag.originStart + MIN_DURATION_MINUTES);
+      applyPlanItemTime(drag.markerId, drag.dayIndex, drag.originStart, nextEnd, false);
+    }
+
+    function handleUp() {
+      const item = activeDraft?.planItems.find((p) => p.markerId === drag.markerId && p.dayIndex === drag.dayIndex);
+      if (item) {
+        const s = item.startMinutes ?? DEFAULT_START_MINUTES;
+        const e = s + (item.durationMinutes ?? item.stopMinutes ?? DEFAULT_STOP_MINUTES);
+        applyPlanItemTime(drag.markerId, drag.dayIndex, s, e, true);
+      }
+      setFrozenAnchorCenter(null);
+      setDraggingTimeline(null);
+    }
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingTimeline, activeDraft]);
 
   async function saveMarker() {
     if (!draftForm || !memberId || !roomId) return;
@@ -609,7 +705,6 @@ export function WorkbenchPage() {
       const markerIdMap = new Map<string, string>();
       const markerById = new Map(markers.map((marker) => [marker.id, marker]));
       const snapshotById = new Map((activeDraft.markerSnapshots ?? []).map((snapshot) => [snapshot.markerId, snapshot]));
-
       for (const item of activeDraft.planItems) {
         if (markerIdMap.has(item.markerId)) continue;
         const live = markerById.get(item.markerId);
@@ -636,17 +731,23 @@ export function WorkbenchPage() {
       activeDraft.planItems.forEach((item) => {
         const list = itemsByDay.get(item.dayIndex) ?? [];
         list.push(item);
-        itemsByDay.set(item.dayIndex, list.sort((a, b) => a.orderIndex - b.orderIndex));
+        itemsByDay.set(
+          item.dayIndex,
+          list.sort(
+            (a, b) =>
+              (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES) ||
+              a.orderIndex - b.orderIndex
+          )
+        );
       });
 
       for (const [dayIndex, dayItems] of itemsByDay) {
-        let currentMinutes = 8 * 60;
-        for (let idx = 0; idx < dayItems.length; idx += 1) {
-          const item = dayItems[idx];
+        for (const item of dayItems) {
           const usableMarkerId = markerIdMap.get(item.markerId) ?? item.markerId;
-          const stopMinutes = Math.max(15, item.stopMinutes ?? DEFAULT_STOP_MINUTES);
-          const startTime = new Date(Date.UTC(2026, 6, dayIndex, Math.floor(currentMinutes / 60), currentMinutes % 60, 0));
-          const endMinutes = currentMinutes + stopMinutes;
+          const startMinutes = Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, item.startMinutes ?? DEFAULT_START_MINUTES));
+          const durationMinutes = Math.max(MIN_DURATION_MINUTES, Math.min(480, item.durationMinutes ?? item.stopMinutes ?? DEFAULT_STOP_MINUTES));
+          const startTime = new Date(Date.UTC(2026, 6, dayIndex, Math.floor(startMinutes / 60), startMinutes % 60, 0));
+          const endMinutes = Math.min(DAY_MINUTES, startMinutes + durationMinutes);
           const endTime = new Date(Date.UTC(2026, 6, dayIndex, Math.floor(endMinutes / 60), endMinutes % 60, 0));
 
           await api.createPlanItem(created.id, {
@@ -656,17 +757,6 @@ export function WorkbenchPage() {
             endTime: endTime.toISOString(),
             orderIndex: item.orderIndex
           });
-
-          currentMinutes = endMinutes;
-          const nextItem = dayItems[idx + 1];
-          if (nextItem) {
-            const fromMarker = markerById.get(item.markerId);
-            const toMarker = markerById.get(nextItem.markerId);
-            if (fromMarker && toMarker) {
-              const travelMinutes = estimateTravelMinutes(getDistanceKm(fromMarker.lng, fromMarker.lat, toMarker.lng, toMarker.lat));
-              currentMinutes += travelMinutes;
-            }
-          }
         }
       }
 
@@ -685,7 +775,17 @@ export function WorkbenchPage() {
       const existingMarkerIds = new Set(markers.map((marker) => marker.id));
       const normalized = items
         .filter((item) => existingMarkerIds.has(item.markerId))
-        .map((item) => ({ markerId: item.markerId, dayIndex: item.dayIndex, orderIndex: item.orderIndex, stopMinutes: DEFAULT_STOP_MINUTES }));
+        .map((item) => ({
+          markerId: item.markerId,
+          dayIndex: item.dayIndex,
+          orderIndex: item.orderIndex,
+          startMinutes: new Date(item.startTime).getUTCHours() * 60 + new Date(item.startTime).getUTCMinutes(),
+          durationMinutes: Math.max(
+            MIN_DURATION_MINUTES,
+            Math.round((new Date(item.endTime).getTime() - new Date(item.startTime).getTime()) / 60000)
+          ),
+          stopMinutes: DEFAULT_STOP_MINUTES
+        }));
 
       if (!normalized.length) {
         setError("该方案引用的地点当前房间不可用，无法复制");
@@ -720,7 +820,17 @@ export function WorkbenchPage() {
     try {
       const source = sharedPlans.find((plan) => plan.id === planId);
       const items = await api.listPlanItems(planId);
-      const normalized = items.map((item) => ({ markerId: item.markerId, dayIndex: item.dayIndex, orderIndex: item.orderIndex, stopMinutes: DEFAULT_STOP_MINUTES }));
+      const normalized = items.map((item) => ({
+        markerId: item.markerId,
+        dayIndex: item.dayIndex,
+        orderIndex: item.orderIndex,
+        startMinutes: new Date(item.startTime).getUTCHours() * 60 + new Date(item.startTime).getUTCMinutes(),
+        durationMinutes: Math.max(
+          MIN_DURATION_MINUTES,
+          Math.round((new Date(item.endTime).getTime() - new Date(item.startTime).getTime()) / 60000)
+        ),
+        stopMinutes: DEFAULT_STOP_MINUTES
+      }));
       setPreviewShared({ planId, title: source?.title ?? "共享方案", items: normalized });
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载预览失败");
@@ -731,16 +841,6 @@ export function WorkbenchPage() {
     const fromSnapshot = activeDraft?.markerSnapshots?.find((marker) => marker.markerId === markerId)?.placeName;
     if (fromSnapshot) return fromSnapshot;
     return markers.find((marker) => marker.id === markerId)?.placeName ?? "(已失效地点)";
-  }
-
-  function getTravelInfo(currentMarkerId: string, nextMarkerId?: string) {
-    if (!nextMarkerId) return null;
-    const currentMarker = markers.find((marker) => marker.id === currentMarkerId);
-    const nextMarker = markers.find((marker) => marker.id === nextMarkerId);
-    if (!currentMarker || !nextMarker) return null;
-    const distanceKm = getDistanceKm(currentMarker.lng, currentMarker.lat, nextMarker.lng, nextMarker.lat);
-    const travelMinutes = estimateTravelMinutes(distanceKm);
-    return { distanceKm, travelMinutes };
   }
 
   const previewItemsByDay = useMemo(() => {
@@ -1091,7 +1191,7 @@ export function WorkbenchPage() {
                 <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
                 <p className="page-note">当前 {activeDayCount} 天</p>
               </div>
-              <p className="page-note">把地点拖到时间轴，调整停留时长。地图会用蓝色路线和时间提示展示停留与路程间隔。</p>
+              <p className="page-note">拖入时间轴后，可直接拖动时间段本体调整位置，拖上边缘改开始，拖下边缘改结束。</p>
 
               <div className="timeline-day-switch">
                 <p>第 {activeTimelineDay} 天</p>
@@ -1105,82 +1205,106 @@ export function WorkbenchPage() {
               </div>
 
               <div
-                className={dropTarget?.dayIndex === activeTimelineDay && !dropTarget.beforeMarkerId ? "day-column timeline-column drop-target" : "day-column timeline-column"}
+                ref={timelineColumnRef}
+                className={dropTarget?.dayIndex === activeTimelineDay ? "day-column timeline-column drop-target" : "day-column timeline-column"}
                 onDragOver={(event) => {
                   event.preventDefault();
                   setDropTarget({ dayIndex: activeTimelineDay });
                 }}
                 onDragLeave={() => {
-                  setDropTarget((prev) => (prev?.dayIndex === activeTimelineDay && !prev.beforeMarkerId ? null : prev));
+                  setDropTarget((prev) => (prev?.dayIndex === activeTimelineDay ? null : prev));
                 }}
                 onDrop={(event) => {
                   event.preventDefault();
                   const markerId = event.dataTransfer.getData("markerId");
                   if (markerId) {
-                    handleDropOnDay(markerId, activeTimelineDay);
+                    handleDropOnDay(markerId, activeTimelineDay, getMinutesFromDropEvent(event));
                   }
                   setDropTarget(null);
                 }}
               >
-                {timelineItems.length === 0 ? (
+                {timelineSchedule.length === 0 ? (
                   <p className="day-hint">{dropTarget?.dayIndex === activeTimelineDay ? "松开插入时间轴" : "拖入地点开始当天行程"}</p>
                 ) : null}
-                {timelineItems.map((item, idx) => {
-                  const nextItem = timelineItems[idx + 1];
-                  const travelInfo = getTravelInfo(item.markerId, nextItem?.markerId);
+                <div className="timeline-grid-overlay">
+                  {Array.from({ length: 7 }, (_, idx) => idx * 4).map((hour) => (
+                    <div key={`axis-${hour}`} className="timeline-axis-row" style={{ top: `${(hour / 24) * 100}%` }}>
+                      <span>{hour}</span>
+                    </div>
+                  ))}
+                  {Array.from({ length: 6 }, (_, idx) => idx * 4 + 2).map((hour) => (
+                    <div key={`axis-minor-${hour}`} className="timeline-axis-row minor" style={{ top: `${(hour / 24) * 100}%` }} />
+                  ))}
+                </div>
+                {timelineSchedule.map((entry) => {
+                  const item = entry.item;
+                  const startPercent = (entry.start / DAY_MINUTES) * 100;
+                  const centerPercent = ((entry.start + entry.end) / 2 / DAY_MINUTES) * 100;
+                  const segmentHeight = Math.max(14, ((entry.end - entry.start) / DAY_MINUTES) * TIMELINE_PIXEL_HEIGHT);
+                  const isDraggingThis = draggingTimeline?.markerId === item.markerId && draggingTimeline?.dayIndex === activeTimelineDay;
+                  const anchorPercent = isDraggingThis && draggingTimeline?.mode !== "move" && frozenAnchorCenter !== null
+                    ? (frozenAnchorCenter / DAY_MINUTES) * 100
+                    : centerPercent;
                   return (
-                    <div key={`${item.markerId}-${item.dayIndex}`} className="timeline-node-wrap">
-                      <div
-                        className={`day-item timeline-node${dropTarget?.dayIndex === activeTimelineDay && dropTarget.beforeMarkerId === item.markerId ? " drop-above" : ""}`}
-                        data-mid={item.markerId}
-                        draggable
-                        onDragStart={(event) => {
-                          event.dataTransfer.setData("markerId", item.markerId);
-                          setDropTarget(null);
-                        }}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setDropTarget({ dayIndex: activeTimelineDay, beforeMarkerId: item.markerId });
-                        }}
-                        onDragLeave={() => {
-                          setDropTarget((prev) =>
-                            prev?.dayIndex === activeTimelineDay && prev.beforeMarkerId === item.markerId ? null : prev
-                          );
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const markerId = event.dataTransfer.getData("markerId");
-                          if (markerId) {
-                            handleDropBefore(markerId, activeTimelineDay, item.markerId);
-                          }
-                          setDropTarget(null);
-                        }}
-                      >
-                        <div className="timeline-node-main">
-                          <span>{item.orderIndex}. {getMarkerName(item.markerId)}</span>
-                          <label className="timeline-stay">
-                            停留
-                            <input
-                              type="number"
-                              min={15}
-                              max={360}
-                              step={15}
-                              value={item.stopMinutes ?? DEFAULT_STOP_MINUTES}
-                              onChange={(event) => updateStopMinutes(item.markerId, activeTimelineDay, Number(event.target.value || DEFAULT_STOP_MINUTES))}
-                            />
-                            分钟
-                          </label>
-                        </div>
-                        <button className="item-remove" onClick={() => removePlanItem(item.markerId, activeTimelineDay)}>×</button>
+                    <div key={`${item.markerId}-${item.dayIndex}`}>
+                      <div className="timeline-segment-wrap" style={{ top: `${startPercent}%`, height: `${segmentHeight}px` }}>
+                        <button
+                          type="button"
+                          className="timeline-segment-handle top"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setFrozenAnchorCenter((entry.start + entry.end) / 2);
+                            setDraggingTimeline({
+                              markerId: item.markerId,
+                              dayIndex: activeTimelineDay,
+                              mode: "start",
+                              startY: event.clientY,
+                              originStart: entry.start,
+                              originEnd: entry.end
+                            });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="timeline-segment"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setFrozenAnchorCenter(null);
+                            setDraggingTimeline({
+                              markerId: item.markerId,
+                              dayIndex: activeTimelineDay,
+                              mode: "move",
+                              startY: event.clientY,
+                              originStart: entry.start,
+                              originEnd: entry.end
+                            });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="timeline-segment-handle bottom"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setFrozenAnchorCenter((entry.start + entry.end) / 2);
+                            setDraggingTimeline({
+                              markerId: item.markerId,
+                              dayIndex: activeTimelineDay,
+                              mode: "end",
+                              startY: event.clientY,
+                              originStart: entry.start,
+                              originEnd: entry.end
+                            });
+                          }}
+                        />
                       </div>
-                      {travelInfo ? (
-                        <div className="timeline-leg">
-                          <span>路程 {travelInfo.distanceKm.toFixed(1)} km</span>
-                          <small>预计 {travelInfo.travelMinutes} 分钟</small>
-                        </div>
-                      ) : null}
+                      <div className="timeline-item-row" style={{ top: `${anchorPercent}%` }}>
+                        <span className="timeline-link-dot" />
+                      <article className="timeline-event-card">
+                        <strong>{item.orderIndex}. {getMarkerName(item.markerId)}</strong>
+                        <small>{formatMinutes(entry.start)}-{formatMinutes(entry.end)}</small>
+                      </article>
+                      <button className="item-remove" onClick={() => removePlanItem(item.markerId, activeTimelineDay)}>×</button>
+                      </div>
                     </div>
                   );
                 })}

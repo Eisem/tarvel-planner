@@ -2,6 +2,8 @@ export interface PlanItemDraft {
   markerId: string;
   dayIndex: number;
   orderIndex: number;
+  startMinutes?: number;
+  durationMinutes?: number;
   stopMinutes?: number;
 }
 

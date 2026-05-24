@@ -34,7 +34,6 @@ interface Props {
     dayIndex: number;
     path: [number, number][];
     stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }>;
-    legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }>;
     color: string;
   }>;
   poiPreviewMarker?: { lng: number; lat: number; placeName: string } | null;
@@ -71,7 +70,6 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
   const poiPreviewRef = useRef<InstanceType<typeof win.AMap.Marker> | null>(null);
   const polylineRefs = useRef<Array<InstanceType<typeof win.AMap.Polyline>>>([]);
   const stopLabelRefs = useRef<Array<InstanceType<typeof win.AMap.Marker>>>([]);
-  const legLabelRefs = useRef<Array<InstanceType<typeof win.AMap.Marker>>>([]);
   const allowCreateMarkerRef = useRef(allowCreateMarker);
   allowCreateMarkerRef.current = allowCreateMarker;
   const [mapReady, setMapReady] = useState(false);
@@ -197,24 +195,9 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
     polylineRefs.current = [];
     stopLabelRefs.current.forEach((m) => m.setMap(null));
     stopLabelRefs.current = [];
-    legLabelRefs.current.forEach((m) => m.setMap(null));
-    legLabelRefs.current = [];
     if (!routePaths) return;
     routePaths.forEach((route) => {
       if (route.path.length < 2) return;
-      const polyline = new win.AMap.Polyline({
-        path: route.path,
-        strokeColor: route.color,
-        strokeWeight: 5,
-        strokeOpacity: 0.8,
-        strokeStyle: "solid",
-        lineJoin: "round",
-        lineCap: "round",
-        showDir: true,
-      });
-      polyline.setMap(map);
-      polylineRefs.current.push(polyline);
-
       const baseTrack = new win.AMap.Polyline({
         path: route.path,
         strokeColor: "#9fb8d6",
@@ -226,6 +209,19 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
       });
       baseTrack.setMap(map);
       polylineRefs.current.push(baseTrack);
+
+      const polyline = new win.AMap.Polyline({
+        path: route.path,
+        strokeColor: route.color,
+        strokeWeight: 5,
+        strokeOpacity: 0.9,
+        strokeStyle: "solid",
+        lineJoin: "round",
+        lineCap: "round",
+        showDir: true,
+      });
+      polyline.setMap(map);
+      polylineRefs.current.push(polyline);
 
       route.stops.forEach((stop) => {
         let size = 22, bg = route.color, label = stop.label;
@@ -242,18 +238,6 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
         stopLabelRefs.current.push(mk);
       });
 
-      route.legs.forEach((leg) => {
-        const midLng = (leg.from[0] + leg.to[0]) / 2;
-        const midLat = (leg.from[1] + leg.to[1]) / 2;
-        const content = `<div style="padding:2px 8px;border-radius:999px;background:rgba(15,23,42,0.72);color:#e2e8f0;font-size:10px;font-weight:600;border:1px solid rgba(148,163,184,0.35);">${leg.travelMinutes}m · ${leg.distanceKm.toFixed(1)}km</div>`;
-        const mk = new win.AMap.Marker({
-          position: [midLng, midLat],
-          content,
-          offset: new win.AMap.Pixel(-30, -12),
-        });
-        mk.setMap(map);
-        legLabelRefs.current.push(mk);
-      });
     });
   }, [routePaths, mapReady]);
 

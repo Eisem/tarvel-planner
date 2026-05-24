@@ -1106,90 +1106,173 @@ input:focus {
 
 .timeline-column {
   position: relative;
-  padding-left: 20px;
+  padding-left: 46px;
+  height: min(64vh, 560px);
+  min-height: 420px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fdfefe 0%, #f5f9ff 100%);
 }
 
 .timeline-column::before {
   content: "";
   position: absolute;
-  left: 10px;
+  left: 40px;
   top: 10px;
   bottom: 10px;
-  width: 2px;
+  width: 4px;
   border-radius: 2px;
-  background: linear-gradient(180deg, #93c5fd 0%, #1d4ed8 100%);
+  background: #1e3a8a;
 }
 
-.timeline-node-wrap {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.timeline-node {
-  position: relative;
-}
-
-.timeline-node::before {
-  content: "";
+.timeline-grid-overlay {
   position: absolute;
-  left: -16px;
-  top: 50%;
+  inset: 10px 8px 10px 6px;
+  pointer-events: none;
+}
+
+.timeline-axis-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed #dbe7f7;
+}
+
+.timeline-axis-row.minor {
+  border-top: 1px dashed #e8eef9;
+}
+
+.timeline-axis-row span {
+  position: absolute;
+  left: 8px;
+  top: -8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #355a92;
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  transform: translateX(-100%);
+  z-index: 3;
+}
+
+.timeline-item-row {
+  position: absolute;
+  left: 52px;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+}
+
+.timeline-segment-wrap {
+  position: absolute;
+  left: 22px;
+  width: 16px;
+  z-index: 1;
+}
+
+.timeline-axis-stack {
+  width: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.timeline-segment {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 100%;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #4f7fde 0%, #1e40af 100%);
+  box-shadow: 0 6px 12px rgba(30, 64, 175, 0.25);
+  cursor: grab;
+}
+
+.timeline-segment:active {
+  cursor: grabbing;
+}
+
+.timeline-segment-handle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 2px;
+  border: none;
+  border-radius: 999px;
+  background: #7fa7e4;
+  cursor: ns-resize;
+  z-index: 2;
+  box-shadow: 0 2px 6px rgba(30, 64, 175, 0.2);
+  opacity: 0.92;
+}
+
+.timeline-segment-handle.top {
+  top: -6px;
+}
+
+.timeline-segment-handle.bottom {
+  bottom: -6px;
+}
+
+.timeline-link-dot {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: #2563eb;
-  box-shadow: 0 0 0 3px #dbeafe;
+  border-radius: 999px;
+  background: #1e40af;
+}
+
+.timeline-event-card {
+  flex: 1;
+  border: 1px solid #9db8ea;
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
+}
+
+.timeline-event-card strong {
+  font-size: 12px;
+  color: #1e3a8a;
+}
+
+.timeline-event-card small {
+  font-size: 11px;
+  color: #315f9f;
 }
 
 .timeline-node-main {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
   padding-right: 20px;
 }
 
+.timeline-node-title {
+  display: grid;
+  gap: 2px;
+}
+
+.timeline-node-title small {
+  color: #5f7da1;
+  font-size: 11px;
+}
+
 .timeline-stay {
-  display: inline-flex;
-  align-items: center;
+  display: grid;
+  align-items: start;
   gap: 6px;
   font-size: 11px;
   color: #4f6b8d;
-}
-
-.timeline-stay input {
-  width: 66px;
-  padding: 4px 6px;
-  font-size: 12px;
-}
-
-.timeline-leg {
-  margin-left: 4px;
-  padding: 6px 10px;
-  border: 1px dashed #bfd7f7;
-  border-radius: 10px;
-  background: #f8fbff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: #3f5f87;
-}
-
-.day-item.drop-above::before {
-  content: "";
-  position: absolute;
-  top: -2px;
-  left: 4px;
-  right: 4px;
-  height: 1.5px;
-  background: #f97316;
-  border-radius: 1px;
-  box-shadow: 0 0 4px rgba(249, 115, 22, 0.5);
+  min-width: 140px;
 }
 
 .item-remove {
