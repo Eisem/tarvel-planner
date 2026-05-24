@@ -362,6 +362,7 @@ export function WorkbenchPage() {
 
   function handleDropBefore(markerId: string, dayIndex: number, beforeMarkerId: string) {
     if (!activeDraft) return;
+    if (markerId === beforeMarkerId) return;
 
     updateActiveDraft((draft) => {
       const without = draft.planItems.filter((item) => item.markerId !== markerId);
@@ -887,11 +888,13 @@ export function WorkbenchPage() {
                       }}
                     >
                       <p className="day-label">第{day}天</p>
-                      {items.length === 0 ? <p className="day-hint">拖入地点</p> : null}
+                      {items.length === 0 ? (
+                        <p className="day-hint">{dropTarget?.dayIndex === day ? "松开插入此处" : "拖入地点"}</p>
+                      ) : null}
                       {items.map((item) => (
                         <div
                           key={`${item.markerId}-${item.dayIndex}`}
-                          className="day-item"
+                          className={`day-item${dropTarget?.dayIndex === day && dropTarget.beforeMarkerId === item.markerId ? " drop-above" : ""}`}
                           data-mid={item.markerId}
                           draggable
                           onDragStart={(event) => {
@@ -900,6 +903,7 @@ export function WorkbenchPage() {
                           }}
                           onDragOver={(event) => {
                             event.preventDefault();
+                            event.stopPropagation();
                             setDropTarget({ dayIndex: day, beforeMarkerId: item.markerId });
                           }}
                           onDragLeave={() => {
@@ -916,7 +920,6 @@ export function WorkbenchPage() {
                             }
                             setDropTarget(null);
                           }}
-                          style={dropTarget?.dayIndex === day && dropTarget.beforeMarkerId === item.markerId ? { outline: "2px solid #3b82f6" } : undefined}
                         >
                           <span>{getMarkerName(item.markerId)}</span>
                           <button className="item-remove" onClick={() => removePlanItem(item.markerId, day)}>×</button>
@@ -927,9 +930,9 @@ export function WorkbenchPage() {
                 })}
               </div>
 
-              <div className="row-btns">
+              <div className="wb-actions">
                 <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
-                <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除本地草稿</button>
+                <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除当前草稿</button>
               </div>
             </>
           )}
