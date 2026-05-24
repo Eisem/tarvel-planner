@@ -11,7 +11,7 @@ export interface PoiSelect {
 }
 
 export interface PoiSearchResult {
-  first: PoiSelect | null;
+  items: PoiSelect[];
   total: number;
 }
 
@@ -36,6 +36,7 @@ interface Props {
     legs: Array<{ from: [number, number]; to: [number, number]; distanceKm: number; travelMinutes: number }>;
     color: string;
   }>;
+  poiPreviewMarker?: { lng: number; lat: number; placeName: string } | null;
   onMapReady: (mapInstance: MapObj) => void;
   onMapClick: (lng: number, lat: number, address: string) => void;
   onMarkerClick: (marker: MarkerRow) => void;
@@ -59,12 +60,13 @@ function markerIcon(color: string) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, routePaths, onMapReady, onMapClick, onMarkerClick }: Props) {
+export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateMarker = true, routePaths, poiPreviewMarker, onMapReady, onMapClick, onMarkerClick }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<MapObj | null>(null);
   const makerRef = useRef<Map<string, InstanceType<typeof win.AMap.Marker>>>(new Map());
   const infoWindowRef = useRef<InstanceType<typeof win.AMap.InfoWindow> | null>(null);
   const draftMarkerRef = useRef<InstanceType<typeof win.AMap.Marker> | null>(null);
+  const poiPreviewRef = useRef<InstanceType<typeof win.AMap.Marker> | null>(null);
   const polylineRefs = useRef<Array<InstanceType<typeof win.AMap.Polyline>>>([]);
   const stopLabelRefs = useRef<Array<InstanceType<typeof win.AMap.Marker>>>([]);
   const legLabelRefs = useRef<Array<InstanceType<typeof win.AMap.Marker>>>([]);
@@ -171,6 +173,24 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
+    if (poiPreviewRef.current) {
+      poiPreviewRef.current.setMap(null);
+      poiPreviewRef.current = null;
+    }
+    if (!poiPreviewMarker) return;
+    const mk = new win.AMap.Marker({
+      position: [poiPreviewMarker.lng, poiPreviewMarker.lat],
+      title: poiPreviewMarker.placeName,
+      icon: markerIcon("#f59e0b"),
+      offset: new win.AMap.Pixel(-12, -34),
+    });
+    mk.setMap(map);
+    poiPreviewRef.current = mk;
+  }, [poiPreviewMarker]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
     polylineRefs.current.forEach((p) => p.setMap(null));
     polylineRefs.current = [];
     stopLabelRefs.current.forEach((m) => m.setMap(null));
@@ -238,13 +258,12 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
   return <div className="amap-canvas workbench-map" ref={mapRef} />;
 }
 
-export async function searchPoi(mapInstance: unknown, keyword: string, onSelect: (poi: PoiSelect) => void): Promise<PoiSearchResult> {
+export async function searchPoi(mapInstance: unknown, keyword: string): Promise<PoiSearchResult> {
   const trimmed = keyword.trim();
   if (!trimmed) {
-    return { first: null, total: 0 };
+    return { items: [], total: 0 };
   }
 
-  const mi = mapInstance as MapObj | null;
   const webKey = getAMapWebKey();
 
   if (webKey) {
@@ -263,58 +282,39 @@ export async function searchPoi(mapInstance: unknown, keyword: string, onSelect:
       throw new Error(data.info || "高德搜索失败");
     }
 
-    const first = data.pois?.[0];
-    if (!first?.location) {
-      return { first: null, total: Number(data.count || 0) };
-    }
-    const [lngText, latText] = first.location.split(",");
-    const lng = Number(lngText);
-    const lat = Number(latText);
-    const poi: PoiSelect = {
-      placeName: first.name || trimmed,
-      lng,
-      lat,
-      address: first.address,
-      poiId: first.id
-    };
-    onSelect(poi);
-    if (mi) {
-      mi.setCenter([lng, lat]);
-      mi.setZoom(14);
-    }
-    return { first: poi, total: Number(data.count || 1) };
+    const items: PoiSelect[] = (data.pois || [])
+      .filter((p) => p.location)
+      .map((p) => {
+        const [lngText, latText] = p.location!.split(",");
+        return {
+          placeName: p.name || trimmed,
+          lng: Number(lngText),
+          lat: Number(latText),
+          address: p.address,
+          poiId: p.id
+        };
+      });
+
+    return { items, total: Number(data.count || 0) };
   }
 
   if (!mapInstance) {
     throw new Error("地图尚未加载完成");
   }
 
-  await new Promise<void>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const ps = new win.AMap.PlaceSearch({ map: mapInstance });
     ps.search(trimmed, (_s, r) => {
       const pois = (r?.poiList as Record<string, unknown> | undefined)?.pois as Array<Record<string, unknown>> | undefined;
-      const first = pois?.[0];
-      if (!first) {
-        resolve();
-        return;
-      }
-      const loc = first.location as { lng: number; lat: number };
-      const poi = {
-        placeName: first.name as string,
-        lng: loc.lng,
-        lat: loc.lat,
-        address: first.address as string | undefined,
-        poiId: first.id as string | undefined
-      };
-      onSelect(poi);
-      if (mi) {
-        mi.setCenter([loc.lng, loc.lat]);
-        mi.setZoom(14);
-      }
-      resolve();
+      const items: PoiSelect[] = (pois || []).map((p) => ({
+        placeName: p.name as string,
+        lng: (p.location as { lng: number; lat: number }).lng,
+        lat: (p.location as { lng: number; lat: number }).lat,
+        address: p.address as string | undefined,
+        poiId: p.id as string | undefined
+      }));
+      resolve({ items, total: items.length });
     });
     setTimeout(() => reject(new Error("地点搜索超时")), 8000);
   });
-
-  return { first: null, total: 0 };
 }
