@@ -754,10 +754,10 @@ export function WorkbenchPage() {
           placeName: snapshot.placeName,
           lng: snapshot.lng,
           lat: snapshot.lat,
-          address: snapshot.address,
-          poiId: snapshot.poiId,
-          budget: snapshot.budget,
-          note: snapshot.note
+          address: snapshot.address ?? undefined,
+          poiId: snapshot.poiId ?? undefined,
+          budget: snapshot.budget ?? 0,
+          note: snapshot.note ?? undefined
         });
         markerIdMap.set(item.markerId, (recreated as { id: string }).id);
       }
@@ -1019,7 +1019,7 @@ export function WorkbenchPage() {
                   <h4>标点编辑</h4>
                   <div className="draft-grid">
                     <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
-                    <label><span>预算（可选）</span><input type="number" value={draftForm.budget ?? ""} onChange={(event) => setDraftForm({ ...draftForm, budget: event.target.value ? Number(event.target.value) : undefined })} /></label>
+                    <label><span>预算（可选）</span><input type="number" value={draftForm.budget ?? 0} onChange={(event) => setDraftForm({ ...draftForm, budget: event.target.value ? Number(event.target.value) : undefined })} /></label>
                     <label><span>备注（可选）</span><input value={draftForm.note ?? ""} onChange={(event) => setDraftForm({ ...draftForm, note: event.target.value })} /></label>
                     <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
                     {!canEditSelectedMarker ? <p className="page-note">该标点属于其他成员，仅可查看。</p> : null}
@@ -1061,7 +1061,7 @@ export function WorkbenchPage() {
                           }}
                         >
                           <strong>{marker.placeName}</strong>
-                          <span>预算：{marker.budget ?? "-"}</span>
+                          <span>预算：{marker.budget ?? 0}</span>
                           <span>创建者：{marker.creatorNickname ?? "未知"}</span>
                           <small>{marker.lng.toFixed(4)}, {marker.lat.toFixed(4)}</small>
                         </button>
