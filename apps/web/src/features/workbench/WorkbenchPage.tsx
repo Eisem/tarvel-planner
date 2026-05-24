@@ -8,6 +8,7 @@ import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/sock
 import { MapCanvas, searchPoi } from "../map/MapCanvas";
 import type { PoiSelect } from "../map/MapCanvas";
 import { type DraftSnapshot, type PlanItemDraft, type SnapshotMarker, createDraft, loadDrafts, saveDrafts } from "../snapshot/snapshotStore";
+import { generateUUID, safeCopyText } from "../../utils/uuid";
 
 type DraftForm = {
   placeName: string;
@@ -827,7 +828,7 @@ export function WorkbenchPage() {
       }
 
       const draft: DraftSnapshot = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         roomCode,
         title: `${plan?.title || "共享方案"} 副本`,
         sourcePlanId: planId,
@@ -919,7 +920,7 @@ export function WorkbenchPage() {
             <button
               className="copy-btn"
               onClick={() => {
-                navigator.clipboard.writeText(roomCode ?? "").catch(() => {});
+                safeCopyText(roomCode ?? "");
               }}
               title="一键复制"
             >

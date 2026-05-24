@@ -1,3 +1,5 @@
+import { generateUUID } from "../../utils/uuid";
+
 export interface PlanItemDraft {
   markerId: string;
   dayIndex: number;
@@ -54,7 +56,7 @@ export function saveDrafts(roomCode: string, drafts: DraftSnapshot[]) {
 
 export function createDraft(roomCode: string, title?: string): DraftSnapshot {
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     roomCode,
     title: title ?? `方案 ${new Date().toLocaleString("zh-CN")}`,
     dayCount: 3,

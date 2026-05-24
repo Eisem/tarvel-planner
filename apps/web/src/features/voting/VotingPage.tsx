@@ -7,6 +7,7 @@ import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/sock
 import { MapCanvas } from "../map/MapCanvas";
 import { createDraft, loadDrafts, saveDrafts } from "../snapshot/snapshotStore";
 import type { DraftSnapshot } from "../snapshot/snapshotStore";
+import { generateUUID, safeCopyText } from "../../utils/uuid";
 
 type PlanInfo = {
   id: string;
@@ -289,7 +290,7 @@ export function VotingPage() {
 
       const drafts = loadDrafts(roomCode);
       const draft: DraftSnapshot = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         roomCode,
         title: `${plan?.title ?? "共享方案"} 副本`,
         sourcePlanId: planId,
@@ -331,7 +332,7 @@ export function VotingPage() {
             <button
               className="copy-btn"
               onClick={() => {
-                navigator.clipboard.writeText(roomCode ?? "").catch(() => {});
+                safeCopyText(roomCode ?? "");
               }}
               title="一键复制"
             >
