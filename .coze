@@ -1,0 +1,7 @@
+[project]
+requires = ["nodejs-22"]
+project_type = "web"
+
+[deploy]
+build = ["bash", "scripts/deploy-build.sh"]
+run = ["bash", "scripts/deploy-run.sh"]
