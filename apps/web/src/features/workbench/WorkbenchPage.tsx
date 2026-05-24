@@ -621,7 +621,7 @@ export function WorkbenchPage() {
           <h1>{roomName || "未命名房间"}</h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>投票</Link>
+          <Link className="btn" to={`/rooms/${roomCode}/vote?memberId=${memberId}&nickname=${encodeURIComponent(memberNickname)}`}>共享方案</Link>
           <Link className="btn" to="/">返回首页</Link>
         </div>
       </header>
@@ -768,20 +768,6 @@ export function WorkbenchPage() {
                       <small>{draft.planItems.length} 个行程点</small>
                     </button>
                     <button className="draft-delete" onClick={() => deleteDraft(draft.id)}>×</button>
-                  </article>
-                ))}
-              </div>
-
-              <h4>共享方案（只读，可复制）</h4>
-              <div className="draft-cards">
-                {sharedPlans.map((plan) => (
-                  <article key={plan.id} className="draft-card">
-                    <strong>{plan.title}</strong>
-                    <small>创建者：{plan.creatorMemberId}</small>
-                    <div className="row-btns">
-                      <button className="btn btn-sm" onClick={() => previewSharedPlan(plan.id)}>预览</button>
-                      <button className="btn btn-sm" onClick={() => copySharedToLocal(plan.id)}>复制到本地编辑</button>
-                    </div>
                   </article>
                 ))}
               </div>

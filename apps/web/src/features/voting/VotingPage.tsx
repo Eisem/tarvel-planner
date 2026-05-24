@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../../services/api";
+import type { MarkerRow, PlanItemRow } from "../../services/api";
 import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/socket";
+import { MapCanvas } from "../map/MapCanvas";
+import { createDraft, loadDrafts, saveDrafts } from "../snapshot/snapshotStore";
+import type { DraftSnapshot } from "../snapshot/snapshotStore";
 
 type PlanInfo = {
   id: string;
@@ -30,17 +34,27 @@ export function VotingPage() {
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [voteResults, setVoteResults] = useState<VoteResult[]>([]);
   const [memberCount, setMemberCount] = useState(0);
+  const [markers, setMarkers] = useState<MarkerRow[]>([]);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const [modalPlanId, setModalPlanId] = useState("");
+  const [modalPlanTitle, setModalPlanTitle] = useState("");
+  const [modalMarkers, setModalMarkers] = useState<MarkerRow[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const mapInstanceRef = useRef<unknown>(null);
 
   const refreshPlansAndVotes = useCallback(async (targetRoomId: string, mid: string) => {
-    const [planList, myVotes, result] = await Promise.all([
+    const [planList, myVotes, result, markerList] = await Promise.all([
       api.listPlans(targetRoomId),
       api.listMyVotes(targetRoomId, mid),
-      api.getVoteResult(targetRoomId)
+      api.getVoteResult(targetRoomId),
+      api.listMarkers(targetRoomId)
     ]);
     setPlans(planList.map((p) => ({ id: p.id, title: p.title, creatorMemberId: p.creatorMemberId })));
     setStarredIds(new Set(myVotes));
     setVoteResults(result.plans);
     setMemberCount(result.memberCount);
+    setMarkers(markerList);
   }, []);
 
   useEffect(() => {
@@ -92,6 +106,12 @@ export function VotingPage() {
     };
   }, [memberId, roomCode, roomId, refreshPlansAndVotes]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   async function toggleStar(planId: string) {
     if (!memberId) return;
     try {
@@ -106,14 +126,74 @@ export function VotingPage() {
         await api.votePlan(planId, { memberId });
         setStarredIds((prev) => new Set(prev).add(planId));
       }
-      // refresh vote results
       if (roomId) {
         const result = await api.getVoteResult(roomId);
         setVoteResults(result.plans);
         setMemberCount(result.memberCount);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "操作失败");
+      setToast({ message: e instanceof Error ? e.message : "操作失败", type: "error" });
+    }
+  }
+
+  async function openPreviewModal(planId: string) {
+    try {
+      setModalLoading(true);
+      setModalPlanId(planId);
+      const plan = plans.find((p) => p.id === planId);
+      setModalPlanTitle(plan?.title ?? "");
+      const items = await api.listPlanItems(planId);
+      const planMarkerIds = new Set(items.map((item) => item.markerId));
+      const filtered = markers.filter((m) => planMarkerIds.has(m.id));
+      setModalMarkers(filtered);
+    } catch (e) {
+      setToast({ message: e instanceof Error ? e.message : "加载预览失败", type: "error" });
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
+  function closeModal() {
+    setModalPlanId("");
+    setModalPlanTitle("");
+    setModalMarkers([]);
+  }
+
+  async function saveToLocal(planId: string) {
+    if (!roomCode) return;
+    try {
+      const plan = plans.find((p) => p.id === planId);
+      const items = await api.listPlanItems(planId);
+      const existingMarkerIds = new Set(markers.map((m) => m.id));
+      const matched = items
+        .filter((item) => existingMarkerIds.has(item.markerId))
+        .map((item) => ({ markerId: item.markerId, dayIndex: item.dayIndex, orderIndex: item.orderIndex }));
+
+      if (!matched.length) {
+        setToast({ message: "该方案没有可用的地点，无法保存", type: "error" });
+        return;
+      }
+
+      const drafts = loadDrafts(roomCode);
+      const draft: DraftSnapshot = {
+        id: crypto.randomUUID(),
+        roomCode,
+        title: `${plan?.title ?? "共享方案"} 副本`,
+        sourcePlanId: planId,
+        dayCount: 3,
+        markerIds: [...new Set(matched.map((item) => item.markerId))],
+        planItems: matched,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      saveDrafts(roomCode, [draft, ...drafts]);
+      const skipped = items.length - matched.length;
+      setToast({
+        message: `"${draft.title}" 已保存到本地${skipped > 0 ? `（${skipped} 个地点已失效已跳过）` : ""}`,
+        type: "success"
+      });
+    } catch (e) {
+      setToast({ message: e instanceof Error ? e.message : "保存失败", type: "error" });
     }
   }
 
@@ -129,8 +209,20 @@ export function VotingPage() {
 
       <header className="wb-header">
         <div>
-          <p className="room-code">房间码：{roomCode}</p>
-          <h1>方案投票</h1>
+          <p className="room-code">
+            房间码
+            <span className="room-code-value">{roomCode}</span>
+            <button
+              className="copy-btn"
+              onClick={() => {
+                navigator.clipboard.writeText(roomCode ?? "").catch(() => {});
+              }}
+              title="一键复制"
+            >
+              复制
+            </button>
+          </p>
+          <h1>共享方案</h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Link className="btn" to={`/rooms/${roomCode}/workbench?memberId=${memberId}`}>返回工作台</Link>
@@ -140,6 +232,10 @@ export function VotingPage() {
 
       {loading ? <p className="page-note wb-message">加载中...</p> : null}
       {error ? <p className="error-text wb-message">{error}</p> : null}
+
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>{toast.message}</div>
+      )}
 
       <div className="vote-layout">
         <main className="vote-main">
@@ -156,15 +252,29 @@ export function VotingPage() {
                       <strong>{plan.title}</strong>
                       <small>创建者：{plan.creatorMemberId}</small>
                     </div>
-                    <button
-                      className={`star-btn${starred ? " active" : ""}`}
-                      onClick={() => toggleStar(plan.id)}
-                      title={starred ? "取消点赞" : "点赞"}
-                    >
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill={starred ? "#f59e0b" : "none"} stroke={starred ? "#f59e0b" : "#94a3b8"} strokeWidth="2">
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                      </svg>
-                    </button>
+                    <div className="vote-plan-actions">
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => openPreviewModal(plan.id)}
+                      >
+                        预览
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => saveToLocal(plan.id)}
+                      >
+                        保存到本地
+                      </button>
+                      <button
+                        className={`star-btn${starred ? " active" : ""}`}
+                        onClick={() => toggleStar(plan.id)}
+                        title={starred ? "取消点赞" : "点赞"}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill={starred ? "#f59e0b" : "none"} stroke={starred ? "#f59e0b" : "#94a3b8"} strokeWidth="2">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                      </button>
+                    </div>
                   </article>
                 );
               })}
@@ -207,6 +317,31 @@ export function VotingPage() {
           </div>
         </aside>
       </div>
+
+      {modalPlanId ? (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{modalPlanTitle}</h3>
+              <button className="btn btn-sm" onClick={closeModal}>关闭</button>
+            </div>
+            <div className="modal-map">
+              {modalLoading ? (
+                <p className="page-note" style={{ padding: 40, textAlign: "center" }}>加载中...</p>
+              ) : (
+                <MapCanvas
+                  markers={modalMarkers}
+                  draftMarker={null}
+                  allowCreateMarker={false}
+                  onMapReady={(map) => { mapInstanceRef.current = map; }}
+                  onMapClick={() => {}}
+                  onMarkerClick={() => {}}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
