@@ -470,6 +470,7 @@ input:focus {
 }
 
 .wb-right {
+  position: relative;
   padding: 10px;
   overflow: auto;
   gap: 10px;
@@ -502,8 +503,67 @@ input:focus {
   padding-top: 10px;
 }
 
+.place-list-toggle {
+  border: 1px solid #d0def0;
+  border-radius: 12px;
+  background: #f8fafd;
+  color: #5b7da5;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.place-list-toggle:hover {
+  background: #edf3fa;
+  color: #3b6ddb;
+}
+
 .wb-right h4 {
   margin: 2px 0;
+}
+
+/* frozen / read-only preview */
+.wb-right.frozen {
+  background: rgba(248, 250, 253, 0.8);
+  border-color: #d8e4f4;
+}
+
+.wb-right.frozen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: rgba(200, 215, 235, 0.12);
+  pointer-events: none;
+}
+
+.frozen-day {
+  background: #fff !important;
+  border-color: #c5d5e9 !important;
+  border-style: solid !important;
+  box-shadow: 0 2px 6px rgba(120, 150, 190, 0.08);
+  cursor: default;
+  user-select: none;
+}
+
+.frozen-item {
+  background: #f6f8fc !important;
+  border-color: #d6e3f2 !important;
+  cursor: default;
+}
+
+.frozen-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6382a5;
+  background: #e8f0f8;
+  border: 1px solid #c8d8ed;
+  border-radius: 4px;
+  padding: 1px 8px;
+  letter-spacing: 0.04em;
 }
 
 .schedule-grid {
