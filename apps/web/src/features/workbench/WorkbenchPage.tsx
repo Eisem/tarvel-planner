@@ -170,9 +170,10 @@ interface DayColumnProps {
   dayIndex: number;
   isActive: boolean;
   children: React.ReactNode;
+  onColumnReady?: (height: number) => void;
 }
 
-function DayColumn({ dayIndex, isActive, children }: DayColumnProps) {
+function DayColumn({ dayIndex, isActive, children, onColumnReady }: DayColumnProps) {
   const { active } = useDndContext();
   const activeId = active?.id?.toString() ?? "";
   const isTimelineDrag = activeId.startsWith("move-") || activeId.startsWith("start-") || activeId.startsWith("end-");
@@ -181,9 +182,16 @@ function DayColumn({ dayIndex, isActive, children }: DayColumnProps) {
     disabled: isTimelineDrag || !isActive,
   });
 
+  const columnRef = (node: HTMLDivElement | null) => {
+    setNodeRef(node);
+    if (node && onColumnReady) {
+      onColumnReady(node.clientHeight);
+    }
+  };
+
   return (
     <div
-      ref={setNodeRef}
+      ref={columnRef}
       data-day-column={dayIndex}
       className={isOver ? "day-column timeline-column drop-target" : "day-column timeline-column"}
     >
@@ -259,6 +267,7 @@ export function WorkbenchPage() {
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
   const [createPlanMode, setCreatePlanMode] = useState(false);
+  const [columnPixelHeight, setColumnPixelHeight] = useState(TIMELINE_PIXEL_HEIGHT);
   const [activeTimelineDay, setActiveTimelineDay] = useState(1);
   const [draggingPlaceLabel, setDraggingPlaceLabel] = useState<string | null>(null);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
@@ -1531,17 +1540,16 @@ export function WorkbenchPage() {
                 <p className="page-note">拖入时间轴后，可直接拖动时间段本体调整位置，拖上边缘改开始，拖下边缘改结束。</p>
 
                 <div className="timeline-day-switch">
-                  <p>第 {activeTimelineDay} 天</p>
-                  <input
-                    type="range"
-                    min={1}
-                    max={activeDayCount}
-                    value={activeTimelineDay}
-                    onChange={(event) => setActiveTimelineDay(Number(event.target.value))}
-                  />
+                  <button className="day-arrow" disabled={activeTimelineDay <= 1} onClick={() => setActiveTimelineDay((prev) => Math.max(1, prev - 1))}>
+                    <svg width="12" height="16" viewBox="0 0 6 10" fill="none"><path d="M5 1L1 5l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                  <span className="day-label">第 {activeTimelineDay} 天</span>
+                  <button className="day-arrow" disabled={activeTimelineDay >= activeDayCount} onClick={() => setActiveTimelineDay((prev) => Math.min(activeDayCount, prev + 1))}>
+                    <svg width="12" height="16" viewBox="0 0 6 10" fill="none"><path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
                 </div>
 
-                <DayColumn dayIndex={activeTimelineDay} isActive={true}>
+                <DayColumn dayIndex={activeTimelineDay} isActive={true} onColumnReady={setColumnPixelHeight}>
                   {timelineSchedule.length === 0 ? (
                     <p className="day-hint">{overDayIndex === activeTimelineDay ? "松开插入时间轴" : "拖入地点开始当天行程"}</p>
                   ) : null}
@@ -1559,7 +1567,7 @@ export function WorkbenchPage() {
                     const item = entry.item;
                     const startPercent = (entry.start / DAY_MINUTES) * 100;
                     const centerPercent = ((entry.start + entry.end) / 2 / DAY_MINUTES) * 100;
-                    const segmentHeight = Math.max(14, ((entry.end - entry.start) / DAY_MINUTES) * TIMELINE_PIXEL_HEIGHT);
+                    const segmentHeight = Math.max(14, ((entry.end - entry.start) / DAY_MINUTES) * columnPixelHeight);
                     const segDrag = segmentDragRef.current;
                     const isDraggingThis = segDrag?.markerId === item.markerId
                       && segDrag?.dayIndex === activeTimelineDay;

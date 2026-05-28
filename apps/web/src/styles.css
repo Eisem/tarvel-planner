@@ -1169,19 +1169,48 @@ input:focus {
 }
 
 .timeline-day-switch {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.timeline-day-switch p {
-  margin: 0;
-  color: #365577;
-  font-size: 12px;
+.day-arrow {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: #dce9fa;
+  color: #3b6ddb;
+  font-size: 18px;
   font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
 }
 
-.timeline-day-switch input[type="range"] {
-  accent-color: #2563eb;
+.day-arrow:hover:not(:disabled) {
+  background: #c5d9f5;
+}
+
+.day-arrow:disabled {
+  background: #eef3f8;
+  color: #bcc8d6;
+  cursor: default;
+}
+
+.day-label {
+  padding: 9px 16px;
+  background: #dce9fa;
+  border-radius: 8px;
+  color: #1e4fa3;
+  font-size: 14px;
+  font-weight: 700;
+  min-width: 74px;
+  text-align: center;
 }
 
 .timeline-column {
@@ -1290,13 +1319,22 @@ input:focus {
   opacity: 0.92;
 }
 
-.timeline-segment-handle::before {
+.timeline-segment-handle.top::before {
   content: "";
   position: absolute;
-  top: -12px;
-  bottom: -12px;
-  left: -8px;
-  right: -8px;
+  top: -14px;
+  bottom: -4px;
+  left: -10px;
+  right: -10px;
+}
+
+.timeline-segment-handle.bottom::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -14px;
+  left: -10px;
+  right: -10px;
 }
 
 .timeline-segment-handle.top {
