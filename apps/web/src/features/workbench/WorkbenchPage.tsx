@@ -278,6 +278,7 @@ export function WorkbenchPage() {
     originEnd: number;
     mode: string;
     frozenAnchorCenter: number | null;
+    offsetMinutes: number;
   } | null>(null);
 
   const [poiSearchResults, setPoiSearchResults] = useState<PoiSelect[]>([]);
@@ -792,6 +793,31 @@ export function WorkbenchPage() {
     });
   }
 
+  function swapPlanItemOrder(markerId: string, dayIndex: number, direction: "before" | "after", targetMarkerId: string) {
+    if (!activeDraft) return;
+    updateActiveDraft((draft) => {
+      const current = draft.planItems.find((p) => p.markerId === markerId && p.dayIndex === dayIndex);
+      const target = draft.planItems.find((p) => p.markerId === targetMarkerId && p.dayIndex === dayIndex);
+      if (!current || !target) return draft;
+      const dur = current.durationMinutes ?? current.stopMinutes ?? DEFAULT_STOP_MINUTES;
+      const tStart = target.startMinutes ?? DEFAULT_START_MINUTES;
+      const tDur = target.durationMinutes ?? target.stopMinutes ?? DEFAULT_STOP_MINUTES;
+      const newStart = direction === "before"
+        ? Math.max(0, tStart - dur)
+        : tStart + tDur;
+      const bounded = Math.min(DAY_MINUTES - dur, newStart);
+      const updated = draft.planItems.map((p) => {
+        if (p.markerId === markerId && p.dayIndex === dayIndex) {
+          return { ...p, startMinutes: bounded, durationMinutes: dur, stopMinutes: dur };
+        }
+        return p;
+      });
+      const dayItems = normalizeOrder(updated.filter((p) => p.dayIndex === dayIndex));
+      const otherItems = updated.filter((p) => p.dayIndex !== dayIndex);
+      return { ...draft, planItems: [...otherItems, ...dayItems] };
+    });
+  }
+
   /* ====== DnD Sensors & Handlers ====== */
 
   const sensors = useSensors(
@@ -827,6 +853,7 @@ export function WorkbenchPage() {
         segmentDragRef.current = {
           ...data,
           frozenAnchorCenter: data.mode !== "move" ? (data.originStart + data.originEnd) / 2 : null,
+          offsetMinutes: 0,
         };
       }
     }
@@ -844,19 +871,73 @@ export function WorkbenchPage() {
       const column = document.querySelector(`[data-day-column="${dayIndex}"]`);
       if (!column) return;
       const minutesPerPixel = DAY_MINUTES / column.clientHeight;
-      const diffMinutes = delta.y * minutesPerPixel;
+      const diffMinutes = delta.y * minutesPerPixel - dragData.offsetMinutes;
 
       if (mode === "move") {
         const duration = originEnd - originStart;
         let nextStart = originStart + diffMinutes;
         nextStart = Math.max(0, Math.min(DAY_MINUTES - duration, nextStart));
+
+        const sorted = (activeDraft?.planItems ?? [])
+          .filter((p) => p.dayIndex === dayIndex && p.markerId !== markerId)
+          .sort((a, b) => (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES));
+        const nextCenter = nextStart + duration / 2;
+
+        const preNodes = sorted.filter((p) => (p.startMinutes ?? DEFAULT_START_MINUTES) + (p.durationMinutes ?? DEFAULT_STOP_MINUTES) <= originStart);
+        const prev = preNodes[preNodes.length - 1];
+        if (prev) {
+          const pStart = prev.startMinutes ?? DEFAULT_START_MINUTES;
+          const pDur = prev.durationMinutes ?? DEFAULT_STOP_MINUTES;
+          if (nextCenter <= pStart + pDur / 2) {
+            swapPlanItemOrder(markerId, dayIndex, "before", prev.markerId);
+            const newStart = Math.max(0, pStart - duration);
+            dragData.offsetMinutes += newStart - dragData.originStart;
+            dragData.originStart = newStart;
+            dragData.originEnd = newStart + duration;
+            return;
+          }
+          nextStart = Math.max(pStart + pDur, nextStart);
+        }
+
+        const next = sorted.find((p) => (p.startMinutes ?? DEFAULT_START_MINUTES) >= originEnd);
+        if (next) {
+          const nStart = next.startMinutes ?? DEFAULT_START_MINUTES;
+          const nDur = next.durationMinutes ?? DEFAULT_STOP_MINUTES;
+          if (nextCenter >= nStart + nDur / 2) {
+            swapPlanItemOrder(markerId, dayIndex, "after", next.markerId);
+            const newStart = Math.min(DAY_MINUTES - duration, nStart + nDur);
+            dragData.offsetMinutes += newStart - dragData.originStart;
+            dragData.originStart = newStart;
+            dragData.originEnd = newStart + duration;
+            return;
+          }
+          nextStart = Math.min(nStart - duration, nextStart);
+        }
+
         const nextEnd = nextStart + duration;
         applyPlanItemTime(markerId, dayIndex, nextStart, nextEnd, false);
       } else if (mode === "start") {
-        const nextStart = Math.min(originStart + diffMinutes, originEnd - MIN_DURATION_MINUTES);
+        let nextStart = Math.min(originStart + diffMinutes, originEnd - MIN_DURATION_MINUTES);
+        const sorted = (activeDraft?.planItems ?? [])
+          .filter((p) => p.dayIndex === dayIndex && p.markerId !== markerId)
+          .sort((a, b) => (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES));
+        const preNodes = sorted.filter((p) => (p.startMinutes ?? DEFAULT_START_MINUTES) + (p.durationMinutes ?? DEFAULT_STOP_MINUTES) <= originStart);
+        const prev = preNodes[preNodes.length - 1];
+        if (prev) {
+          const prevEnd = (prev.startMinutes ?? DEFAULT_START_MINUTES) + (prev.durationMinutes ?? DEFAULT_STOP_MINUTES);
+          nextStart = Math.max(prevEnd, nextStart);
+        }
         applyPlanItemTime(markerId, dayIndex, nextStart, originEnd, false);
       } else {
-        const nextEnd = Math.max(originEnd + diffMinutes, originStart + MIN_DURATION_MINUTES);
+        let nextEnd = Math.max(originEnd + diffMinutes, originStart + MIN_DURATION_MINUTES);
+        const sorted = (activeDraft?.planItems ?? [])
+          .filter((p) => p.dayIndex === dayIndex && p.markerId !== markerId)
+          .sort((a, b) => (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES));
+        const nextNode = sorted.find((p) => (p.startMinutes ?? DEFAULT_START_MINUTES) >= originEnd);
+        if (nextNode) {
+          const nStart = nextNode.startMinutes ?? DEFAULT_START_MINUTES;
+          nextEnd = Math.min(nStart, nextEnd);
+        }
         applyPlanItemTime(markerId, dayIndex, originStart, nextEnd, false);
       }
     }
@@ -1368,8 +1449,6 @@ export function WorkbenchPage() {
                               placeName: marker.placeName,
                               lng: marker.lng,
                               lat: marker.lat,
-                              address: marker.address ?? "",
-                              poiId: marker.poiId ?? "",
                               budget: marker.budget,
                               note: marker.note ?? "",
                             });
@@ -1499,7 +1578,6 @@ export function WorkbenchPage() {
                     setSelectedMarkerId(marker.id);
                     setDraftForm({
                       placeName: m.placeName, lng: m.lng, lat: m.lat,
-                      address: m.address ?? "", poiId: m.poiId ?? "",
                       budget: m.budget, note: m.note ?? "",
                     });
                   }
@@ -1512,7 +1590,6 @@ export function WorkbenchPage() {
                   if (m) {
                     setDraftForm({
                       placeName: m.placeName, lng: m.lng, lat: m.lat,
-                      address: m.address ?? "", poiId: m.poiId ?? "",
                       budget: m.budget, note: m.note ?? "",
                     });
                   }
