@@ -1,7 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
+import {
+  DndContext,
+  DragOverlay,
+  useDraggable,
+  useDroppable,
+  useDndContext,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  pointerWithin,
+  type DragEndEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+  type Modifier,
+  type CollisionDetection,
+} from "@dnd-kit/core";
 import { api } from "../../services/api";
 import type { MarkerRow } from "../../services/api";
 import { joinRoomRealtime, leaveRoomRealtime, socket } from "../../services/socket";
@@ -28,6 +46,184 @@ const MIN_DURATION_MINUTES = 15;
 const SNAP_MINUTES = 15;
 const DAY_MINUTES = 24 * 60;
 const TIMELINE_PIXEL_HEIGHT = 520;
+
+/* ====== DnD Sub-Components ====== */
+
+/* ====== MarkerCard & DraggableMarkerCard ====== */
+
+interface MarkerCardProps {
+  marker: MarkerRow;
+  selected?: boolean;
+  createMode?: boolean;
+  checked?: boolean;
+  onCheckToggle?: (markerId: string) => void;
+  canDelete?: boolean;
+  canEdit?: boolean;
+  onSelect?: (markerId: string) => void;
+  onDelete?: (markerId: string) => void;
+  onEdit?: (markerId: string) => void;
+  dragRef?: (node: HTMLElement | null) => void;
+  dragListeners?: Record<string, unknown>;
+  dragAttributes?: Record<string, unknown>;
+}
+
+function MarkerCard({
+  marker,
+  selected,
+  createMode,
+  checked,
+  onCheckToggle,
+  canDelete,
+  canEdit,
+  onSelect,
+  onDelete,
+  onEdit,
+  dragRef,
+  dragListeners,
+  dragAttributes,
+}: MarkerCardProps) {
+  return (
+    <div className={selected ? "marker-item active" : "marker-item"}>
+      {createMode ? (
+        <>
+          <label className="marker-check-row">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => onCheckToggle?.(marker.id)}
+            />
+            <span className="marker-check-name">{marker.placeName}</span>
+          </label>
+          <div className="marker-check-meta">
+            <small>创建者：{marker.creatorNickname ?? "未知"}</small>
+            <small>预算：{marker.budget ?? 0}</small>
+          </div>
+          {marker.note ? (
+            <small className="marker-check-note">备注：{marker.note}</small>
+          ) : null}
+        </>
+      ) : (
+        <div
+          ref={dragRef}
+          {...(dragListeners as Record<string, unknown>)}
+          {...(dragAttributes as Record<string, unknown>)}
+          className="marker-body"
+          onClick={() => onSelect?.(marker.id)}
+        >
+          <strong>{marker.placeName}</strong>
+          <span>预算：{marker.budget ?? 0}</span>
+          <span>创建者：{marker.creatorNickname ?? "未知"}</span>
+          {marker.note ? <small>备注：{marker.note}</small> : null}
+        </div>
+      )}
+      {!createMode && (
+        <div className="marker-actions">
+          {canEdit && (
+            <button className="marker-edit" onClick={(e) => { e.stopPropagation(); onEdit?.(marker.id); }} title="编辑">&#9998;</button>
+          )}
+          {canDelete && (
+            <button className="marker-delete" onClick={(e) => { e.stopPropagation(); onDelete?.(marker.id); }} title="删除">&times;</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DraggableMarkerCard({ marker, ...rest }: Omit<MarkerCardProps, "dragRef" | "dragListeners" | "dragAttributes">) {
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: `place-${marker.id}`,
+    data: { markerId: marker.id, placeName: marker.placeName },
+  });
+  return (
+    <MarkerCard
+      marker={marker}
+      {...rest}
+      dragRef={setNodeRef}
+      dragListeners={listeners as unknown as Record<string, unknown>}
+      dragAttributes={attributes as unknown as Record<string, unknown>}
+    />
+  );
+}
+
+function DraggablePlaceItem({ markerId, placeName }: { markerId: string; placeName: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `place-${markerId}`,
+    data: { markerId, placeName },
+  });
+
+  return (
+    <button
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className="planner-place-item"
+      style={{ opacity: isDragging ? 0.3 : 1 }}
+    >
+      <span className="drag-chip">DRAG</span>
+      <strong>{placeName}</strong>
+    </button>
+  );
+}
+
+interface DayColumnProps {
+  dayIndex: number;
+  isActive: boolean;
+  children: React.ReactNode;
+}
+
+function DayColumn({ dayIndex, isActive, children }: DayColumnProps) {
+  const { active } = useDndContext();
+  const activeId = active?.id?.toString() ?? "";
+  const isTimelineDrag = activeId.startsWith("move-") || activeId.startsWith("start-") || activeId.startsWith("end-");
+  const { setNodeRef, isOver } = useDroppable({
+    id: `day-${dayIndex}`,
+    disabled: isTimelineDrag || !isActive,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-day-column={dayIndex}
+      className={isOver ? "day-column timeline-column drop-target" : "day-column timeline-column"}
+    >
+      {children}
+    </div>
+  );
+}
+
+interface SegmentDragProps {
+  markerId: string;
+  dayIndex: number;
+  originStart: number;
+  originEnd: number;
+}
+
+function SegmentBar({ markerId, dayIndex, originStart, originEnd }: SegmentDragProps) {
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: `move-${markerId}-${dayIndex}`,
+    data: { markerId, dayIndex, originStart, originEnd, mode: "move" },
+  });
+  return <button ref={setNodeRef} {...listeners} {...attributes} type="button" className="timeline-segment" />;
+}
+
+function HandleTop({ markerId, dayIndex, originStart, originEnd }: SegmentDragProps) {
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: `start-${markerId}-${dayIndex}`,
+    data: { markerId, dayIndex, originStart, originEnd, mode: "start" },
+  });
+  return <button ref={setNodeRef} {...listeners} {...attributes} type="button" className="timeline-segment-handle top" />;
+}
+
+function HandleBottom({ markerId, dayIndex, originStart, originEnd }: SegmentDragProps) {
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: `end-${markerId}-${dayIndex}`,
+    data: { markerId, dayIndex, originStart, originEnd, mode: "end" },
+  });
+  return <button ref={setNodeRef} {...listeners} {...attributes} type="button" className="timeline-segment-handle bottom" />;
+}
+
+/* ====== WorkbenchPage ====== */
 
 export function WorkbenchPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -61,19 +257,19 @@ export function WorkbenchPage() {
   const [previewShared, setPreviewShared] = useState<{ planId: string; title: string; items: PlanItemDraft[] } | null>(null);
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
-  const [snapshotMode, setSnapshotMode] = useState(false);
-  const [dropTarget, setDropTarget] = useState<{ dayIndex: number } | null>(null);
+  const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
+  const [createPlanMode, setCreatePlanMode] = useState(false);
   const [activeTimelineDay, setActiveTimelineDay] = useState(1);
-  const [draggingTimeline, setDraggingTimeline] = useState<{
+  const [draggingPlaceLabel, setDraggingPlaceLabel] = useState<string | null>(null);
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const segmentDragRef = useRef<{
     markerId: string;
     dayIndex: number;
-    mode: "move" | "start" | "end";
-    startY: number;
     originStart: number;
     originEnd: number;
+    mode: string;
+    frozenAnchorCenter: number | null;
   } | null>(null);
-  const [frozenAnchorCenter, setFrozenAnchorCenter] = useState<number | null>(null);
-  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
   const [poiSearchResults, setPoiSearchResults] = useState<PoiSelect[]>([]);
   const [poiSearchTotal, setPoiSearchTotal] = useState(0);
@@ -81,7 +277,14 @@ export function WorkbenchPage() {
   const [mapFitKey, setMapFitKey] = useState(0);
 
   const mapInstanceRef = useRef<unknown>(null);
-  const timelineColumnRef = useRef<HTMLDivElement | null>(null);
+  const mapCacheRef = useRef<object[]>([]);
+  type RoutePathsResult = Array<{
+    dayIndex: number;
+    path: [number, number][];
+    stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }>;
+    color: string;
+  }> | undefined;
+  const routeCacheRef = useRef<RoutePathsResult>(undefined);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
   const selectedMarker = useMemo(() => markers.find((marker) => marker.id === selectedMarkerId) ?? null, [markers, selectedMarkerId]);
   const canEditSelectedMarker = useMemo(
@@ -143,9 +346,13 @@ export function WorkbenchPage() {
     return map;
   }, [markers, activeDraft]);
   const markersForMap = useMemo(() => {
-    if (leftTab !== "snapshots" || !activeDraft) return markers;
-    if (activeDraftMarkerList.length > 0) {
-      return activeDraftMarkerList.map((item, index) => ({
+    if (segmentDragRef.current) {
+      return mapCacheRef.current.length > 0 ? (mapCacheRef.current as MarkerRow[]) : markers;
+    }
+    let result: MarkerRow[];
+    if (leftTab !== "snapshots" || !activeDraft) { result = markers; }
+    else if (activeDraftMarkerList.length > 0) {
+      result = activeDraftMarkerList.map((item, index) => ({
         id: item.markerId || `snapshot-${index}`,
         memberId,
         creatorNickname: memberNickname,
@@ -156,9 +363,12 @@ export function WorkbenchPage() {
         budget: item.budget,
         note: item.note
       }));
+    } else {
+      const selected = new Set(activeDraftMarkerIds);
+      result = markers.filter((marker) => selected.has(marker.id));
     }
-    const selected = new Set(activeDraftMarkerIds);
-    return markers.filter((marker) => selected.has(marker.id));
+    mapCacheRef.current = result;
+    return result;
   }, [activeDraft, activeDraftMarkerIds, activeDraftMarkerList, leftTab, markers, memberColor, memberId, memberNickname]);
   const activeDayCount = activeDraft?.dayCount ?? 3;
 
@@ -193,6 +403,9 @@ export function WorkbenchPage() {
   }, [timelineItems]);
 
   const routePaths = useMemo(() => {
+    if (segmentDragRef.current) {
+      return routeCacheRef.current;
+    }
     if (leftTab !== "snapshots") return undefined;
     if (!activeDraft || activeDraft.planItems.length === 0) return undefined;
     const routes: Array<{
@@ -225,7 +438,9 @@ export function WorkbenchPage() {
         routes.push({ dayIndex, path, stops, color: DAY_COLORS[(dayIndex - 1) % DAY_COLORS.length] });
       }
     });
-    return routes.length > 0 ? routes : undefined;
+    const result = routes.length > 0 ? routes : undefined;
+    routeCacheRef.current = result;
+    return result;
   }, [activeDraft, draftItemsByDay, markerLookup, leftTab, activeTimelineDay]);
 
   useEffect(() => {
@@ -259,7 +474,6 @@ export function WorkbenchPage() {
 
   useEffect(() => {
     if (leftTab === "markers") {
-      setSnapshotMode(false);
       setSelectedForSnapshot([]);
       setDraftForm(null);
       setError("");
@@ -277,7 +491,6 @@ export function WorkbenchPage() {
       try {
         if (!roomCode) return;
 
-        // Phase 1: collect all data (no setState)
         const room = await api.getRoom(roomCode);
         if (disposed) return;
 
@@ -296,7 +509,6 @@ export function WorkbenchPage() {
 
         if (disposed) return;
 
-        // Phase 2: apply all state in one synchronous block
         setRoomId(room.id);
         setRoomName(room.name ?? "");
         if (selfColor) setMemberColor(selfColor);
@@ -384,14 +596,6 @@ export function WorkbenchPage() {
       .map((item, idx) => ({ ...item, orderIndex: idx + 1 }));
   }
 
-  function getMinutesFromDropEvent(event: DragEvent<HTMLDivElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientY - rect.top) / rect.height;
-    const minutes = Math.round(Math.max(0, Math.min(1, ratio)) * DAY_MINUTES);
-    const snapped = Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES;
-    return Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, snapped));
-  }
-
   function snapMinutes(value: number) {
     return Math.round(value / SNAP_MINUTES) * SNAP_MINUTES;
   }
@@ -445,7 +649,6 @@ export function WorkbenchPage() {
     setLeftTab("snapshots");
     setMapFitKey((n) => n + 1);
     setSelectedForSnapshot([]);
-    setSnapshotMode(false);
     setError("");
   }
 
@@ -580,53 +783,122 @@ export function WorkbenchPage() {
     });
   }
 
-  useEffect(() => {
-    if (!draggingTimeline) return;
-    const drag = draggingTimeline;
+  /* ====== DnD Sensors & Handlers ====== */
 
-    function handleMove(event: MouseEvent) {
-      const column = timelineColumnRef.current;
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const customCollisionDetection: CollisionDetection = (args) => {
+    const id = args.active.id.toString();
+    if (id.startsWith("place-")) return pointerWithin(args);
+    return [];
+  };
+
+  const customAxisModifier: Modifier = (args) => {
+    const id = args.active?.id?.toString() ?? "";
+    if (id.startsWith("move-") || id.startsWith("start-") || id.startsWith("end-")) {
+      return { ...args.transform, x: 0 };
+    }
+    return args.transform;
+  };
+
+  function handleDragStart(event: DragStartEvent) {
+    const id = event.active.id.toString();
+    if (id.startsWith("place-")) {
+      setDraggingPlaceLabel(event.active.data.current?.placeName ?? "");
+      setOverDayIndex(null);
+      return;
+    }
+    if (id.startsWith("move-") || id.startsWith("start-") || id.startsWith("end-")) {
+      const data = event.active.data.current as { markerId: string; dayIndex: number; originStart: number; originEnd: number; mode: string } | null;
+      if (data) {
+        segmentDragRef.current = {
+          ...data,
+          frozenAnchorCenter: data.mode !== "move" ? (data.originStart + data.originEnd) / 2 : null,
+        };
+      }
+    }
+  }
+
+  function handleDragMove(event: DragMoveEvent) {
+    setOverDayIndex(null);
+    const { active, delta } = event;
+    const id = active.id.toString();
+
+    if (id.startsWith("move-") || id.startsWith("start-") || id.startsWith("end-")) {
+      const dragData = segmentDragRef.current;
+      if (!dragData) return;
+      const { markerId, dayIndex, originStart, originEnd, mode } = dragData;
+      const column = document.querySelector(`[data-day-column="${dayIndex}"]`);
       if (!column) return;
       const minutesPerPixel = DAY_MINUTES / column.clientHeight;
-      const diffMinutes = (event.clientY - drag.startY) * minutesPerPixel;
+      const diffMinutes = delta.y * minutesPerPixel;
 
-      if (drag.mode === "move") {
-        const duration = drag.originEnd - drag.originStart;
-        let nextStart = drag.originStart + diffMinutes;
+      if (mode === "move") {
+        const duration = originEnd - originStart;
+        let nextStart = originStart + diffMinutes;
         nextStart = Math.max(0, Math.min(DAY_MINUTES - duration, nextStart));
         const nextEnd = nextStart + duration;
-        applyPlanItemTime(drag.markerId, drag.dayIndex, nextStart, nextEnd, false);
-        return;
+        applyPlanItemTime(markerId, dayIndex, nextStart, nextEnd, false);
+      } else if (mode === "start") {
+        const nextStart = Math.min(originStart + diffMinutes, originEnd - MIN_DURATION_MINUTES);
+        applyPlanItemTime(markerId, dayIndex, nextStart, originEnd, false);
+      } else {
+        const nextEnd = Math.max(originEnd + diffMinutes, originStart + MIN_DURATION_MINUTES);
+        applyPlanItemTime(markerId, dayIndex, originStart, nextEnd, false);
       }
+    }
+  }
 
-      if (drag.mode === "start") {
-        const nextStart = Math.min(drag.originStart + diffMinutes, drag.originEnd - MIN_DURATION_MINUTES);
-        applyPlanItemTime(drag.markerId, drag.dayIndex, nextStart, drag.originEnd, false);
-        return;
+  function handleDragOver(event: DragOverEvent) {
+    const overId = event.over?.id?.toString() ?? "";
+    if (overId.startsWith("day-")) {
+      setOverDayIndex(Number(overId.slice(4)));
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    const id = active.id.toString();
+
+    if (id.startsWith("place-") && over?.id?.toString().startsWith("day-")) {
+      const markerId = active.data.current?.markerId as string;
+      const dayIndex = Number(over.id.toString().slice(4));
+      const draggableRect = active.rect.current.translated;
+      const droppableRect = over.rect;
+      if (draggableRect && droppableRect) {
+        const draggableCenterY = draggableRect.top + draggableRect.height / 2;
+        const relativeY = draggableCenterY - droppableRect.top;
+        const ratio = Math.max(0, Math.min(1, relativeY / droppableRect.height));
+        const minutes = Math.round((Math.round(ratio * DAY_MINUTES / SNAP_MINUTES) * SNAP_MINUTES));
+        const startMinutes = Math.max(0, Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, minutes));
+        handleDropOnDay(markerId, dayIndex, startMinutes);
       }
-
-      const nextEnd = Math.max(drag.originEnd + diffMinutes, drag.originStart + MIN_DURATION_MINUTES);
-      applyPlanItemTime(drag.markerId, drag.dayIndex, drag.originStart, nextEnd, false);
     }
 
-    function handleUp() {
-      const item = activeDraft?.planItems.find((p) => p.markerId === drag.markerId && p.dayIndex === drag.dayIndex);
-      if (item) {
-        const s = item.startMinutes ?? DEFAULT_START_MINUTES;
-        const e = s + (item.durationMinutes ?? item.stopMinutes ?? DEFAULT_STOP_MINUTES);
-        applyPlanItemTime(drag.markerId, drag.dayIndex, s, e, true);
+    if (id.startsWith("move-") || id.startsWith("start-") || id.startsWith("end-")) {
+      const data = segmentDragRef.current;
+      if (data) {
+        const item = activeDraft?.planItems.find(
+          (p) => p.markerId === data.markerId && p.dayIndex === data.dayIndex
+        );
+        if (item) {
+          const s = item.startMinutes ?? DEFAULT_START_MINUTES;
+          const e = s + (item.durationMinutes ?? item.stopMinutes ?? DEFAULT_STOP_MINUTES);
+          applyPlanItemTime(data.markerId, data.dayIndex, s, e, true);
+        }
+        segmentDragRef.current = null;
       }
-      setFrozenAnchorCenter(null);
-      setDraggingTimeline(null);
     }
 
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-  }, [draggingTimeline, activeDraft]);
+    setDraggingPlaceLabel(null);
+    setOverDayIndex(null);
+  }
+
+  /* ====== Other Functions ====== */
 
   async function saveMarker() {
     if (!draftForm || !memberId || !roomId) return;
@@ -678,6 +950,7 @@ export function WorkbenchPage() {
       await refreshMarkers(roomId);
       if (selectedMarkerId === markerId) {
         setSelectedMarkerId("");
+        setDraftForm(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除标点失败");
@@ -685,7 +958,7 @@ export function WorkbenchPage() {
   }
 
   async function handleSearch() {
-    if (snapshotMode || leftTab !== "markers") {
+    if (leftTab !== "markers") {
       setError("方案管理中不可新增标点，请先切回地点池");
       return;
     }
@@ -942,448 +1215,421 @@ export function WorkbenchPage() {
         <div className={`toast toast-${toast.type}`}>{toast.message}</div>
       )}
 
-      <motion.div className="wb-layout" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
-        <aside className="wb-left">
-          <div className="wb-tabs">
-            <button className={leftTab === "markers" ? "wb-tab active" : "wb-tab"} onClick={() => { setLeftTab("markers"); setMapFitKey((n) => n + 1); }}>地点池</button>
-            <button className={leftTab === "snapshots" ? "wb-tab active" : "wb-tab"} onClick={() => { setLeftTab("snapshots"); setMapFitKey((n) => n + 1); }}>方案管理</button>
-          </div>
-
-          {leftTab === "markers" ? (
-            <div className="wb-panel">
-              <div className="wb-search-row">
-                <div className="search-input-wrap">
-                  <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：紫禁城" />
-                  {(searchKeyword || poiSearchResults.length > 0) ? (
-                    <button className="search-clear" onClick={() => { setSearchKeyword(""); setPoiSearchResults([]); setPoiPreview(null); }}>×</button>
-                  ) : null}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={customCollisionDetection}
+        modifiers={[customAxisModifier]}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <motion.div className="wb-layout" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
+          <aside className="wb-left">
+            {createPlanMode ? (
+              <div className="wb-panel create-plan-panel">
+                <div className="create-plan-header">
+                  <h4>创建方案</h4>
+                  <button className="btn btn-sm" onClick={() => { setCreatePlanMode(false); setSelectedForSnapshot([]); }}>取消</button>
                 </div>
-                <button className="btn btn-primary btn-sm" disabled={searching} onClick={handleSearch}>{searching ? "搜索中" : "搜索"}</button>
-
-                {!snapshotMode && poiSearchResults.length > 0 ? (
-                  <div className="poi-dropdown">
-                    <h4>搜索结果（{poiSearchTotal} 条）</h4>
-                    <p className="page-note">点击预览地点，再次点击确认选定</p>
-                    <ul className="poi-result-list">
-                      {poiSearchResults.map((poi, idx) => (
-                        <li key={poi.poiId || idx}>
-                          <button
-                            className={`poi-result-item${poiPreview?.poiId === poi.poiId ? " active" : ""}`}
-                            onClick={() => {
-                              if (poiPreview?.poiId === poi.poiId) {
-                                setDraftForm({ placeName: poi.placeName, lng: poi.lng, lat: poi.lat, address: poi.address, poiId: poi.poiId });
-                                setPoiSearchResults([]);
-                                setPoiPreview(null);
-                              } else {
-                                setPoiPreview(poi);
-                                const map = mapInstanceRef.current as { setCenter: (p: [number, number]) => void; setZoom: (z: number) => void } | null;
-                                if (map) {
-                                  map.setCenter([poi.lng, poi.lat]);
-                                  map.setZoom(15);
-                                }
-                              }
-                            }}
-                          >
-                            <strong>{poi.placeName}</strong>
-                            <small>{poi.address}</small>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="snapshot-entry">
-                {!snapshotMode ? (
-                  <button className="btn btn-primary snapshot-mode-btn" onClick={() => { setSnapshotMode(true); setSelectedForSnapshot([]); setDraftForm(null); setError(""); setLeftTab("snapshots"); setMapFitKey((n) => n + 1); if (drafts.length > 0) setActiveDraftId(drafts[0].id); }}>
-                    开始规划
-                  </button>
-                ) : (
-                  <div className="snapshot-mode-panel">
-                    <p className="page-note">规划模式已开启：请勾选地点后保存。</p>
-                    <div className="row-btns">
-                      <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>保存为本地方案</button>
-                      <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
-                      <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
-                      <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
-                      <button className="btn btn-sm" onClick={() => { setSnapshotMode(false); setSelectedForSnapshot([]); }}>退出规划模式</button>
-                    </div>
-                    <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
-                  </div>
-                )}
-              </div>
-
-              {!snapshotMode && draftForm ? (
-                <div className="draft-box">
-                  <h4>标点编辑</h4>
-                  <div className="draft-grid">
-                    <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
-                    <label><span>预算（可选）</span><input type="number" min="0" max="999999" step="1" value={draftForm.budget ?? 0} onChange={(event) => {
-                      const v = Number(event.target.value);
-                      if (isNaN(v)) return;
-                      const clamped = Math.max(0, Math.min(999999, Math.round(v)));
-                      setDraftForm({ ...draftForm, budget: clamped || undefined });
-                    }} /></label>
-                    <label><span>备注（可选）</span><input value={draftForm.note ?? ""} onChange={(event) => setDraftForm({ ...draftForm, note: event.target.value })} /></label>
-                    <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
-                    {!canEditSelectedMarker ? <p className="page-note">该标点属于其他成员，仅可查看。</p> : null}
-                    <div className="row-btns">
-                      <button className="btn btn-primary btn-sm" disabled={saving || !draftForm.placeName.trim() || !canEditSelectedMarker} onClick={saveMarker}>{saving ? "保存中" : "保存"}</button>
-                      <button className="btn btn-sm" onClick={() => setDraftForm(null)}>取消</button>
-                    </div>
-                  </div>
+                <div className="row-btns">
+                  <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
+                  <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
+                  <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空</button>
                 </div>
-              ) : null}
-
-              <div className="wb-panel-scroll">
-                <h4>地点池（{markers.length}）</h4>
-                <ul className="marker-list-inner">
+                <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
+                <ul className="marker-list-inner create-plan-marker-list">
                   {markers.map((marker) => (
                     <li key={marker.id}>
-                      <div className={selectedMarkerId === marker.id ? "marker-item active" : "marker-item"}>
-                        {snapshotMode ? (
-                          <label className="marker-check">
-                            <input
-                              type="checkbox"
-                              checked={selectedForSnapshot.includes(marker.id)}
-                              onChange={() => toggleMarkerForSnapshot(marker.id)}
-                            />
-                            <span>加入方案</span>
-                          </label>
-                        ) : null}
-                        <button
-                          className="marker-focus"
-                          draggable
-                          onDragStart={(event) => event.dataTransfer.setData("markerId", marker.id)}
-                          onClick={() => {
-                            setSelectedMarkerId(marker.id);
+                      <MarkerCard
+                        marker={marker}
+                        createMode
+                        checked={selectedForSnapshot.includes(marker.id)}
+                        onCheckToggle={toggleMarkerForSnapshot}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                <div className="row-btns create-plan-footer">
+                  <button className="btn btn-primary" onClick={() => {
+                    createSnapshotFromMarkers();
+                    setCreatePlanMode(false);
+                  }}>保存为本地方案</button>
+                </div>
+              </div>
+            ) : (
+              <>
+            <div className="wb-tabs">
+              <button className={leftTab === "markers" ? "wb-tab active" : "wb-tab"} onClick={() => { setLeftTab("markers"); setMapFitKey((n) => n + 1); }}>地点池</button>
+              <button className={leftTab === "snapshots" ? "wb-tab active" : "wb-tab"} onClick={() => { setLeftTab("snapshots"); setMapFitKey((n) => n + 1); }}>方案管理</button>
+            </div>
+
+            {leftTab === "markers" ? (
+              <div className="wb-panel">
+                <div className="wb-search-row">
+                  <div className="search-input-wrap">
+                    <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：紫禁城" />
+                    {(searchKeyword || poiSearchResults.length > 0) ? (
+                      <button className="search-clear" onClick={() => { setSearchKeyword(""); setPoiSearchResults([]); setPoiPreview(null); }}>×</button>
+                    ) : null}
+                  </div>
+                  <button className="btn btn-primary btn-sm" disabled={searching} onClick={handleSearch}>{searching ? "搜索中" : "搜索"}</button>
+
+                  {poiSearchResults.length > 0 ? (
+                    <div className="poi-dropdown">
+                      <h4>搜索结果（{poiSearchTotal} 条）</h4>
+                      <p className="page-note">点击预览地点，再次点击确认选定</p>
+                      <ul className="poi-result-list">
+                        {poiSearchResults.map((poi, idx) => (
+                          <li key={poi.poiId || idx}>
+                            <button
+                              className={`poi-result-item${poiPreview?.poiId === poi.poiId ? " active" : ""}`}
+                              onClick={() => {
+                                if (poiPreview?.poiId === poi.poiId) {
+                                  setSelectedMarkerId("");
+                                  setDraftForm({ placeName: poi.placeName, lng: poi.lng, lat: poi.lat, address: poi.address, poiId: poi.poiId });
+                                  setPoiSearchResults([]);
+                                  setPoiPreview(null);
+                                } else {
+                                  setPoiPreview(poi);
+                                  const map = mapInstanceRef.current as { setCenter: (p: [number, number]) => void; setZoom: (z: number) => void } | null;
+                                  if (map) {
+                                    map.setCenter([poi.lng, poi.lat]);
+                                    map.setZoom(15);
+                                  }
+                                }
+                              }}
+                            >
+                              <strong>{poi.placeName}</strong>
+                              <small>{poi.address}</small>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+
+                {draftForm ? (
+                  <div className={`draft-box${selectedMarker ? " editing" : " creating"}`}>
+                    <h4>{selectedMarker ? "编辑地点" : "创建新地点"}</h4>
+                    <div className="draft-grid">
+                      <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
+                      <label><span>预算（可选）</span><input type="number" min="0" max="999999" step="1" value={draftForm.budget ?? 0} onChange={(event) => {
+                        const v = Number(event.target.value);
+                        if (isNaN(v)) return;
+                        const clamped = Math.max(0, Math.min(999999, Math.round(v)));
+                        setDraftForm({ ...draftForm, budget: clamped });
+                      }} /></label>
+                      <label><span>备注（可选）</span><input value={draftForm.note ?? ""} onChange={(event) => setDraftForm({ ...draftForm, note: event.target.value })} /></label>
+                      <p className="page-note">坐标：{draftForm.lng.toFixed(5)}, {draftForm.lat.toFixed(5)}</p>
+                      {!canEditSelectedMarker ? <p className="page-note">该标点属于其他成员，仅可查看。</p> : null}
+                      <div className="row-btns">
+                        <button className="btn btn-primary btn-sm" disabled={saving || !draftForm.placeName.trim() || !canEditSelectedMarker} onClick={saveMarker}>{saving ? "保存中" : "保存"}</button>
+                        <button className="btn btn-sm" onClick={() => setDraftForm(null)}>取消</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="wb-panel-scroll">
+                  <h4>地点池（{markers.length}）</h4>
+                  <ul className="marker-list-inner">
+                    {markers.map((marker) => (
+                      <li key={marker.id}>
+                        <DraggableMarkerCard
+                          marker={marker}
+                          selected={selectedMarkerId === marker.id}
+                          canDelete={marker.creatorNickname === memberNickname}
+                          canEdit={marker.creatorNickname === memberNickname}
+                          onSelect={(markerId) => {
+                            if (selectedMarkerId !== markerId) {
+                              setDraftForm(null);
+                            }
+                            setSelectedMarkerId(markerId);
                             const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
                             if (map) {
                               map.setCenter([marker.lng, marker.lat]);
                               map.setZoom(14);
                             }
                           }}
-                        >
-                          <strong>{marker.placeName}</strong>
-                          <span>预算：{marker.budget ?? 0}</span>
-                          <span>创建者：{marker.creatorNickname ?? "未知"}</span>
-                          <small>{marker.lng.toFixed(4)}, {marker.lat.toFixed(4)}</small>
-                        </button>
-                        {marker.creatorNickname === memberNickname ? (
-                          <button className="btn btn-sm" onClick={() => deleteMarker(marker.id)}>删除</button>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ) : (
-            <div className="wb-panel">
-              {snapshotMode ? (
-                <div className="snapshot-mode-panel">
-                  <p className="page-note">规划模式已开启：请勾选地点后保存为本地方案。</p>
-                  <div className="row-btns">
-                    <button className="btn btn-primary btn-sm" onClick={createSnapshotFromMarkers}>保存为本地方案</button>
-                    <button className="btn btn-sm" onClick={selectAllForSnapshot}>全选</button>
-                    <button className="btn btn-sm" onClick={invertSelectedForSnapshot}>反选</button>
-                    <button className="btn btn-sm" onClick={() => setSelectedForSnapshot([])}>清空勾选</button>
-                    <button className="btn btn-sm" onClick={() => { setSnapshotMode(false); setSelectedForSnapshot([]); }}>退出规划模式</button>
-                  </div>
-                  <p className="page-note">已勾选 {selectedForSnapshot.length} / {markers.length} 个地点</p>
-                  <ul className="marker-list-inner">
-                    {markers.map((marker) => (
-                      <li key={`pick-${marker.id}`}>
-                        <label className="marker-item marker-check-row">
-                          <input
-                            type="checkbox"
-                            checked={selectedForSnapshot.includes(marker.id)}
-                            onChange={() => toggleMarkerForSnapshot(marker.id)}
-                          />
-                          <span>{marker.placeName}</span>
-                          <small>{marker.creatorNickname ?? "未知创建者"}</small>
-                        </label>
+                          onEdit={(markerId) => {
+                            setSelectedMarkerId(markerId);
+                            setDraftForm({
+                              placeName: marker.placeName,
+                              lng: marker.lng,
+                              lat: marker.lat,
+                              address: marker.address ?? "",
+                              poiId: marker.poiId ?? "",
+                              budget: marker.budget,
+                              note: marker.note ?? "",
+                            });
+                            const map = mapInstanceRef.current as { setCenter: (point: [number, number]) => void; setZoom: (zoom: number) => void } | null;
+                            if (map) {
+                              map.setCenter([marker.lng, marker.lat]);
+                              map.setZoom(14);
+                            }
+                          }}
+                          onDelete={deleteMarker}
+                        />
                       </li>
                     ))}
                   </ul>
                 </div>
-              ) : null}
-
-              <div className="wb-panel-scroll">
-                <h4>本地方案（{drafts.length}）</h4>
-                <div className="draft-cards">
-                  {drafts.map((draft) => (
-                    <article key={draft.id} className={activeDraftId === draft.id ? "draft-card active" : "draft-card"}>
-                      <button className="draft-open" onClick={() => { setActiveDraftId(draft.id); setMapFitKey((n) => n + 1); }}>
-                        <strong>{draft.title}</strong>
-                        <small>{draft.planItems.length} 个行程点</small>
-                      </button>
-                      <button className="draft-delete" onClick={() => deleteDraft(draft.id)}>×</button>
-                    </article>
-                  ))}
-                </div>
-
-                {previewShared ? (
-                  <div className="shared-preview">
-                    <div className="row-btns">
-                      <strong>{previewShared.title} 预览</strong>
-                      <button className="btn btn-sm" onClick={() => setPreviewShared(null)}>关闭预览</button>
-                    </div>
-                    <div className="shared-preview-days">
-                      {Array.from(previewItemsByDay.keys()).sort((a, b) => a - b).map((day) => (
-                        <section key={day} className="shared-day">
-                          <p>第{day}天</p>
-                          {(previewItemsByDay.get(day) ?? []).map((item) => (
-                            <small key={`${item.markerId}-${item.dayIndex}-${item.orderIndex}`}>{item.orderIndex}. {getMarkerName(item.markerId)}</small>
-                          ))}
-                        </section>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {activeDraft ? (
-                  <div className="snapshot-place-bank">
-                    <div className="row-btns">
-                      <h4>地点列表（拖到右侧行程）</h4>
-                      <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
-                        {placeListExpanded ? "收起" : "展开"}
-                      </button>
-                    </div>
-                    {placeListExpanded ? (
-                      <ul className="planner-place-list">
-                        {activeDraftMarkerList.map((marker) => (
-                          <li key={marker.markerId}>
-                            <button
-                              className="planner-place-item"
-                              draggable
-                              onDragStart={(event) => {
-                                event.dataTransfer.setData("markerId", marker.markerId);
-                                setDropTarget(null);
-                              }}
-                            >
-                              <span className="drag-chip">DRAG</span>
-                              <strong>{marker.placeName}</strong>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
-            </div>
+            ) : (
+              <div className="wb-panel">
+                <div className="wb-panel-scroll">
+                  <h4>本地方案（{drafts.length}）</h4>
+                  <div className="draft-cards">
+                    {drafts.map((draft) => (
+                      <article key={draft.id} className={activeDraftId === draft.id ? "draft-card active" : "draft-card"}>
+                        <button className="draft-open" onClick={() => { setActiveDraftId(draft.id); setMapFitKey((n) => n + 1); }}>
+                          <strong>{draft.title}</strong>
+                          <small>{draft.planItems.length} 个行程点</small>
+                        </button>
+                        <button className="draft-delete" onClick={() => deleteDraft(draft.id)}>×</button>
+                      </article>
+                    ))}
+                  </div>
+
+                  {previewShared ? (
+                    <div className="shared-preview">
+                      <div className="row-btns">
+                        <strong>{previewShared.title} 预览</strong>
+                        <button className="btn btn-sm" onClick={() => setPreviewShared(null)}>关闭预览</button>
+                      </div>
+                      <div className="shared-preview-days">
+                        {Array.from(previewItemsByDay.keys()).sort((a, b) => a - b).map((day) => (
+                          <section key={day} className="shared-day">
+                            <p>第{day}天</p>
+                            {(previewItemsByDay.get(day) ?? []).map((item) => (
+                              <small key={`${item.markerId}-${item.dayIndex}-${item.orderIndex}`}>{item.orderIndex}. {getMarkerName(item.markerId)}</small>
+                            ))}
+                          </section>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activeDraft ? (
+                    <div className="snapshot-place-bank">
+                      <div className="row-btns">
+                        <h4>地点列表（拖到右侧行程）</h4>
+                        <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
+                          {placeListExpanded ? "收起" : "展开"}
+                        </button>
+                      </div>
+                      {placeListExpanded ? (
+                        <ul className="planner-place-list">
+                          {activeDraftMarkerList.map((marker) => (
+                            <li key={marker.markerId}>
+                              <DraggablePlaceItem markerId={marker.markerId} placeName={marker.placeName} />
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
           )}
+          <button className="create-plan-btn" onClick={() => {
+            setCreatePlanMode(true);
+            setSelectedForSnapshot([]);
+            setDraftForm(null);
+            setError("");
+          }}>
+            + 创建方案
+          </button>
+        </>
+      )}
         </aside>
 
         <main className="wb-center">
-          {routePaths && routePaths.length > 0 ? (
-            <div className="route-legend-card">
-              <strong>路线图例</strong>
-              <div className="route-legend-list">
-                {routePaths.map((route) => (
-                  <span key={`legend-${route.dayIndex}`} className="route-legend-item">
-                    <i style={{ background: route.color }} />
-                    第{route.dayIndex}天 · {route.stops.length}站
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <MapCanvas
-            markers={markersForMap}
-            routePaths={routePaths}
-            fitKey={mapFitKey}
-            draftMarker={draftForm ? { lng: draftForm.lng, lat: draftForm.lat } : null}
-            draftMarkerColor={memberColor}
-            poiPreviewMarker={poiPreview ? { lng: poiPreview.lng, lat: poiPreview.lat, placeName: poiPreview.placeName } : null}
-            allowCreateMarker={leftTab === "markers" && !snapshotMode}
-            onMapReady={(map) => {
-              mapInstanceRef.current = map;
-            }}
-            onMapClick={(lng, lat, address) => {
-              if (snapshotMode || leftTab !== "markers") {
-                setError("方案管理中不可新增标点，请先切回地点池");
-                return;
-              }
-              const trimmedAddress = (address || "").trim();
-              const placeName = trimmedAddress || getNextUnnamedPlaceName();
-              setDraftForm({ placeName, lng, lat, address: trimmedAddress || undefined });
-            }}
-            onMarkerClick={(marker) => setSelectedMarkerId(marker.id)}
-          />
-        </main>
-
-        <aside className="wb-right">
-          <h4>行程编排</h4>
-          {leftTab !== "snapshots" || !activeDraft ? (
-            <p className="page-note">请先进入方案管理并打开一个本地方案，再进行行程编排。</p>
-          ) : (
-            <>
-              <input
-                className="draft-title-input"
-                value={activeDraft.title}
-                onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
-              />
-              <div className="row-btns">
-                <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
-                <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
-                <p className="page-note">当前 {activeDayCount} 天</p>
-              </div>
-              <p className="page-note">拖入时间轴后，可直接拖动时间段本体调整位置，拖上边缘改开始，拖下边缘改结束。</p>
-
-              <div className="timeline-day-switch">
-                <p>第 {activeTimelineDay} 天</p>
-                <input
-                  type="range"
-                  min={1}
-                  max={activeDayCount}
-                  value={activeTimelineDay}
-                  onChange={(event) => setActiveTimelineDay(Number(event.target.value))}
-                />
-              </div>
-
-              <div
-                ref={timelineColumnRef}
-                className={dropTarget?.dayIndex === activeTimelineDay ? "day-column timeline-column drop-target" : "day-column timeline-column"}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setDropTarget({ dayIndex: activeTimelineDay });
-                }}
-                onDragLeave={() => {
-                  setDropTarget((prev) => (prev?.dayIndex === activeTimelineDay ? null : prev));
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const markerId = event.dataTransfer.getData("markerId");
-                  if (markerId) {
-                    handleDropOnDay(markerId, activeTimelineDay, getMinutesFromDropEvent(event));
-                  }
-                  setDropTarget(null);
-                }}
-              >
-                {timelineSchedule.length === 0 ? (
-                  <p className="day-hint">{dropTarget?.dayIndex === activeTimelineDay ? "松开插入时间轴" : "拖入地点开始当天行程"}</p>
-                ) : null}
-                <div className="timeline-grid-overlay">
-                  {Array.from({ length: 7 }, (_, idx) => idx * 4).map((hour) => (
-                    <div key={`axis-${hour}`} className="timeline-axis-row" style={{ top: `${(hour / 24) * 100}%` }}>
-                      <span>{hour}</span>
-                    </div>
-                  ))}
-                  {Array.from({ length: 6 }, (_, idx) => idx * 4 + 2).map((hour) => (
-                    <div key={`axis-minor-${hour}`} className="timeline-axis-row minor" style={{ top: `${(hour / 24) * 100}%` }} />
+            {routePaths && routePaths.length > 0 ? (
+              <div className="route-legend-card">
+                <strong>路线图例</strong>
+                <div className="route-legend-list">
+                  {routePaths.map((route) => (
+                    <span key={`legend-${route.dayIndex}`} className="route-legend-item">
+                      <i style={{ background: route.color }} />
+                      第{route.dayIndex}天 · {route.stops.length}站
+                    </span>
                   ))}
                 </div>
-                {timelineSchedule.map((entry) => {
-                  const item = entry.item;
-                  const startPercent = (entry.start / DAY_MINUTES) * 100;
-                  const centerPercent = ((entry.start + entry.end) / 2 / DAY_MINUTES) * 100;
-                  const segmentHeight = Math.max(14, ((entry.end - entry.start) / DAY_MINUTES) * TIMELINE_PIXEL_HEIGHT);
-                  const isDraggingThis = draggingTimeline?.markerId === item.markerId && draggingTimeline?.dayIndex === activeTimelineDay;
-                  const anchorPercent = isDraggingThis && draggingTimeline?.mode !== "move" && frozenAnchorCenter !== null
-                    ? (frozenAnchorCenter / DAY_MINUTES) * 100
-                    : centerPercent;
-                  return (
-                    <div key={`${item.markerId}-${item.dayIndex}`}>
-                      <div className="timeline-segment-wrap" style={{ top: `${startPercent}%`, height: `${segmentHeight}px` }}>
-                        <button
-                          type="button"
-                          className="timeline-segment-handle top"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            setFrozenAnchorCenter((entry.start + entry.end) / 2);
-                            setDraggingTimeline({
-                              markerId: item.markerId,
-                              dayIndex: activeTimelineDay,
-                              mode: "start",
-                              startY: event.clientY,
-                              originStart: entry.start,
-                              originEnd: entry.end
-                            });
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="timeline-segment"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            setFrozenAnchorCenter(null);
-                            setDraggingTimeline({
-                              markerId: item.markerId,
-                              dayIndex: activeTimelineDay,
-                              mode: "move",
-                              startY: event.clientY,
-                              originStart: entry.start,
-                              originEnd: entry.end
-                            });
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="timeline-segment-handle bottom"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            setFrozenAnchorCenter((entry.start + entry.end) / 2);
-                            setDraggingTimeline({
-                              markerId: item.markerId,
-                              dayIndex: activeTimelineDay,
-                              mode: "end",
-                              startY: event.clientY,
-                              originStart: entry.start,
-                              originEnd: entry.end
-                            });
-                          }}
-                        />
-                      </div>
-                      <div className="timeline-item-row" style={{ top: `${anchorPercent}%` }}>
-                        <span className="timeline-link-dot" />
-                      <article className="timeline-event-card">
-                        <strong>{item.orderIndex}. {getMarkerName(item.markerId)}</strong>
-                        <small>{formatMinutes(entry.start)}-{formatMinutes(entry.end)}</small>
-                        {(() => {
-                          const meta = markerMetaById.get(item.markerId);
-                          const budgetText = meta?.budget !== undefined ? `¥${meta.budget}` : "-";
-                          const creatorText = meta?.creatorNickname ?? "未知";
-                          const noteText = (meta?.note ?? "").trim();
-                          const key = noteKey(activeTimelineDay, item.markerId);
-                          const expanded = Boolean(expandedNotes[key]);
-                          const longNote = noteText.length > 60;
-                          const inlineNote = noteText ? (expanded ? noteText : shortNote(noteText, 60)) : "-";
-                          return (
-                            <>
-                              <small className="timeline-meta-line">
-                                预算 {budgetText} · 创建者 {creatorText} · 备注 {inlineNote}
-                                {longNote ? (
-                                  <button
-                                    type="button"
-                                    className="timeline-note-toggle"
-                                    onClick={() => setExpandedNotes((prev) => ({ ...prev, [key]: !expanded }))}
-                                  >
-                                    {expanded ? "收起" : "展开"}
-                                  </button>
-                                ) : null}
-                              </small>
-                            </>
-                          );
-                        })()}
-                      </article>
-                      <button className="item-remove" onClick={() => removePlanItem(item.markerId, activeTimelineDay)}>×</button>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
+            ) : null}
+            <MapCanvas
+              markers={markersForMap}
+              routePaths={routePaths}
+              fitKey={mapFitKey}
+              draftMarker={draftForm ? { lng: draftForm.lng, lat: draftForm.lat } : null}
+              draftMarkerColor={memberColor}
+              poiPreviewMarker={poiPreview ? { lng: poiPreview.lng, lat: poiPreview.lat, placeName: poiPreview.placeName } : null}
+              allowCreateMarker={leftTab === "markers"}
+              onMapReady={(map) => {
+                mapInstanceRef.current = map;
+              }}
+              onMapClick={(lng, lat, address) => {
+                  if (leftTab !== "markers") {
+                  setError("方案管理中不可新增标点，请先切回地点池");
+                  return;
+                }
+                const trimmedAddress = (address || "").trim();
+                const placeName = trimmedAddress || getNextUnnamedPlaceName();
+                setSelectedMarkerId("");
+                setDraftForm({ placeName, lng, lat, address: trimmedAddress || undefined });
+              }}
+              onMarkerClick={(marker) => {
+                if (selectedMarkerId === marker.id) return;
 
-              <div className="wb-actions">
-                <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
-                <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除当前草稿</button>
-              </div>
-            </>
-          )}
-        </aside>
-      </motion.div>
+                if (draftForm && !selectedMarkerId) {
+                  const m = markers.find((item) => item.id === marker.id);
+                  if (m) {
+                    setSelectedMarkerId(marker.id);
+                    setDraftForm({
+                      placeName: m.placeName, lng: m.lng, lat: m.lat,
+                      address: m.address ?? "", poiId: m.poiId ?? "",
+                      budget: m.budget, note: m.note ?? "",
+                    });
+                  }
+                  return;
+                }
+
+                setSelectedMarkerId(marker.id);
+                if (draftForm) {
+                  const m = markers.find((item) => item.id === marker.id);
+                  if (m) {
+                    setDraftForm({
+                      placeName: m.placeName, lng: m.lng, lat: m.lat,
+                      address: m.address ?? "", poiId: m.poiId ?? "",
+                      budget: m.budget, note: m.note ?? "",
+                    });
+                  }
+                }
+              }}
+            />
+          </main>
+
+          <aside className="wb-right">
+            <h4>行程编排</h4>
+            {leftTab !== "snapshots" || !activeDraft ? (
+              <p className="page-note">请先进入方案管理并打开一个本地方案，再进行行程编排。</p>
+            ) : (
+              <>
+                <input
+                  className="draft-title-input"
+                  value={activeDraft.title}
+                  onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
+                />
+                <div className="row-btns">
+                  <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
+                  <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
+                  <p className="page-note">当前 {activeDayCount} 天</p>
+                </div>
+                <p className="page-note">拖入时间轴后，可直接拖动时间段本体调整位置，拖上边缘改开始，拖下边缘改结束。</p>
+
+                <div className="timeline-day-switch">
+                  <p>第 {activeTimelineDay} 天</p>
+                  <input
+                    type="range"
+                    min={1}
+                    max={activeDayCount}
+                    value={activeTimelineDay}
+                    onChange={(event) => setActiveTimelineDay(Number(event.target.value))}
+                  />
+                </div>
+
+                <DayColumn dayIndex={activeTimelineDay} isActive={true}>
+                  {timelineSchedule.length === 0 ? (
+                    <p className="day-hint">{overDayIndex === activeTimelineDay ? "松开插入时间轴" : "拖入地点开始当天行程"}</p>
+                  ) : null}
+                  <div className="timeline-grid-overlay">
+                    {Array.from({ length: 7 }, (_, idx) => idx * 4).map((hour) => (
+                      <div key={`axis-${hour}`} className="timeline-axis-row" style={{ top: `${(hour / 24) * 100}%` }}>
+                        <span>{hour}</span>
+                      </div>
+                    ))}
+                    {Array.from({ length: 6 }, (_, idx) => idx * 4 + 2).map((hour) => (
+                      <div key={`axis-minor-${hour}`} className="timeline-axis-row minor" style={{ top: `${(hour / 24) * 100}%` }} />
+                    ))}
+                  </div>
+                  {timelineSchedule.map((entry) => {
+                    const item = entry.item;
+                    const startPercent = (entry.start / DAY_MINUTES) * 100;
+                    const centerPercent = ((entry.start + entry.end) / 2 / DAY_MINUTES) * 100;
+                    const segmentHeight = Math.max(14, ((entry.end - entry.start) / DAY_MINUTES) * TIMELINE_PIXEL_HEIGHT);
+                    const segDrag = segmentDragRef.current;
+                    const isDraggingThis = segDrag?.markerId === item.markerId
+                      && segDrag?.dayIndex === activeTimelineDay;
+                    const anchorPercent = isDraggingThis && segDrag?.mode !== "move" && segDrag?.frozenAnchorCenter !== null
+                      ? (segDrag.frozenAnchorCenter / DAY_MINUTES) * 100
+                      : centerPercent;
+                    return (
+                      <div key={`${item.markerId}-${item.dayIndex}`}>
+                        <div className="timeline-segment-wrap" style={{ top: `${startPercent}%`, height: `${segmentHeight}px` }}>
+                          <HandleTop markerId={item.markerId} dayIndex={activeTimelineDay} originStart={entry.start} originEnd={entry.end} />
+                          <SegmentBar markerId={item.markerId} dayIndex={activeTimelineDay} originStart={entry.start} originEnd={entry.end} />
+                          <HandleBottom markerId={item.markerId} dayIndex={activeTimelineDay} originStart={entry.start} originEnd={entry.end} />
+                        </div>
+                        <div className="timeline-item-row" style={{ top: `${anchorPercent}%` }}>
+                          <span className="timeline-link-dot" />
+                        <article className="timeline-event-card">
+                          <strong>{item.orderIndex}. {getMarkerName(item.markerId)}</strong>
+                          <small>{formatMinutes(entry.start)}-{formatMinutes(entry.end)}</small>
+                          {(() => {
+                            const meta = markerMetaById.get(item.markerId);
+                            const budgetText = meta?.budget !== undefined ? `¥${meta.budget}` : "-";
+                            const creatorText = meta?.creatorNickname ?? "未知";
+                            const noteText = (meta?.note ?? "").trim();
+                            const key = noteKey(activeTimelineDay, item.markerId);
+                            const expanded = Boolean(expandedNotes[key]);
+                            const longNote = noteText.length > 60;
+                            const inlineNote = noteText ? (expanded ? noteText : shortNote(noteText, 60)) : "-";
+                            return (
+                              <>
+                                <small className="timeline-meta-line">
+                                  预算 {budgetText} · 创建者 {creatorText} · 备注 {inlineNote}
+                                  {longNote ? (
+                                    <button
+                                      type="button"
+                                      className="timeline-note-toggle"
+                                      onClick={() => setExpandedNotes((prev) => ({ ...prev, [key]: !expanded }))}
+                                    >
+                                      {expanded ? "收起" : "展开"}
+                                    </button>
+                                  ) : null}
+                                </small>
+                              </>
+                            );
+                          })()}
+                        </article>
+                        <button className="item-remove" onClick={() => removePlanItem(item.markerId, activeTimelineDay)}>×</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </DayColumn>
+
+                <div className="wb-actions">
+                  <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
+                  <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除当前草稿</button>
+                </div>
+              </>
+            )}
+          </aside>
+        </motion.div>
+
+        <DragOverlay dropAnimation={null}>
+          {draggingPlaceLabel ? (
+            <div className="planner-place-item drag-overlay-item">
+              <span className="drag-chip">DRAG</span>
+              <strong>{draggingPlaceLabel}</strong>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }

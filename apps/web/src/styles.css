@@ -567,8 +567,8 @@ input:focus {
   gap: 8px;
 }
 
-.marker-item,
-.draft-open {
+.marker-item {
+  position: relative;
   width: 100%;
   text-align: left;
   border: 1px solid #d9e7f8;
@@ -582,8 +582,19 @@ input:focus {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.marker-item:hover,
-.draft-open:hover {
+.draft-open {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.marker-item:hover {
   border-color: #b9d3f3;
   box-shadow: 0 8px 18px rgba(34, 77, 134, 0.1);
   transform: translateY(-1px);
@@ -613,7 +624,8 @@ input:focus {
   width: auto;
 }
 
-.marker-focus {
+.marker-focus,
+.marker-body {
   border: none;
   background: transparent;
   text-align: left;
@@ -621,6 +633,41 @@ input:focus {
   display: grid;
   gap: 4px;
   cursor: pointer;
+}
+
+.marker-actions {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.marker-delete,
+.marker-edit {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.marker-delete:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.marker-edit:hover {
+  color: #1f6fe5;
+  background: rgba(31, 111, 229, 0.08);
 }
 
 .marker-item.active {
@@ -645,27 +692,37 @@ input:focus {
 
 .draft-card {
   position: relative;
-  padding: 10px;
+  border: 1px solid #d9e7f8;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 9px 30px 9px 9px;
   display: grid;
-  gap: 8px;
+  gap: 4px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.draft-card:hover {
+  border-color: #b9d3f3;
+  box-shadow: 0 8px 18px rgba(34, 77, 134, 0.1);
+  transform: translateY(-1px);
 }
 
 .draft-delete {
   position: absolute;
-  bottom: 6px;
-  right: 8px;
+  top: 4px;
+  right: 4px;
   border: none;
   background: transparent;
   color: #94a3b8;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 6px;
   line-height: 1;
   transition: color 0.15s, background 0.15s;
 }
@@ -712,6 +769,7 @@ input:focus {
 
 .draft-card.active {
   border-color: #4a8aea;
+  background: #eaf3ff;
 }
 
 .draft-title-input {
@@ -726,8 +784,14 @@ input:focus {
   padding: 10px;
 }
 
+.draft-box.creating {
+  border-color: #93c5fd;
+  border-left: 3px solid #93c5fd;
+}
+
 .draft-box.editing {
-  border-left: 3px solid #fbbf24;
+  border-color: #1e40af;
+  border-left: 3px solid #1e40af;
 }
 
 .draft-box h4 {
@@ -833,6 +897,15 @@ input:focus {
   margin-top: 10px;
   border-top: 1px dashed #c9dbf2;
   padding-top: 10px;
+}
+
+.snapshot-place-bank .row-btns {
+  align-items: center;
+}
+
+.snapshot-place-bank .btn-sm {
+  min-width: 52px;
+  padding: 6px 14px;
 }
 
 .place-list-toggle {
@@ -1040,6 +1113,13 @@ input:focus {
   cursor: grab;
 }
 
+.planner-place-item.drag-overlay-item {
+  opacity: 0.9;
+  box-shadow: 0 8px 24px rgba(16, 40, 74, 0.25);
+  cursor: grabbing;
+  z-index: 999;
+}
+
 .drag-chip {
   display: inline-block;
   font-size: 10px;
@@ -1208,6 +1288,15 @@ input:focus {
   z-index: 2;
   box-shadow: 0 2px 6px rgba(30, 64, 175, 0.2);
   opacity: 0.92;
+}
+
+.timeline-segment-handle::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  left: -8px;
+  right: -8px;
 }
 
 .timeline-segment-handle.top {
@@ -1714,4 +1803,85 @@ input:focus {
   border-style: solid;
   background: rgba(249, 115, 22, 0.06);
   box-shadow: inset 0 0 20px rgba(249, 115, 22, 0.08);
+}
+
+.create-plan-btn {
+  position: sticky;
+  bottom: 0;
+  margin: auto 12px 12px;
+  padding: 13px;
+  width: calc(100% - 24px);
+  background: linear-gradient(140deg, #2f67c7, #1e4fa3);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(30, 79, 163, 0.3);
+  z-index: 5;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.create-plan-btn:hover {
+  box-shadow: 0 6px 20px rgba(30, 79, 163, 0.45);
+  transform: translateY(-1px);
+}
+
+.create-plan-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+  padding: 10px;
+}
+
+.create-plan-panel .create-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.create-plan-panel .marker-check-row {
+  gap: 6px;
+}
+
+.create-plan-panel .marker-check-row span {
+  font-size: 13px;
+  color: #0f2745;
+}
+
+.create-plan-panel .marker-check-meta {
+  display: flex;
+  gap: 10px;
+  padding: 0 0 0 22px;
+  font-size: 11px;
+  color: #8098b5;
+}
+
+.create-plan-panel .marker-check-note {
+  display: block;
+  padding: 2px 0 0 22px;
+  font-size: 11px;
+  color: #8098b5;
+}
+
+.create-plan-panel .marker-item {
+  padding-top: 12px;
+}
+
+.create-plan-panel .marker-check-row small {
+  color: #507090;
+}
+
+.create-plan-panel .marker-list-inner {
+  flex: 1;
+  overflow-y: auto;
+  align-content: start;
+}
+
+.create-plan-panel .create-plan-footer {
+  padding-top: 8px;
+  justify-content: center;
 }

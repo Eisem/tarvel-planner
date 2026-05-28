@@ -72,6 +72,11 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
   const stopLabelRefs = useRef<Array<InstanceType<typeof win.AMap.Marker>>>([]);
   const allowCreateMarkerRef = useRef(allowCreateMarker);
   allowCreateMarkerRef.current = allowCreateMarker;
+  const markerClickedRef = useRef(false);
+  const onMarkerClickRef = useRef(onMarkerClick);
+  onMarkerClickRef.current = onMarkerClick;
+  const onMapClickRef = useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
   const [mapReady, setMapReady] = useState(false);
 
   function escapeText(v: string | number | undefined) {
@@ -117,8 +122,12 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
         setMapReady(true);
         onMapReady(map);
 
-        map.on("click", (e) => {
-          if (infoWindowRef.current) {
+      map.on("click", (e) => {
+        if (markerClickedRef.current) {
+          markerClickedRef.current = false;
+          return;
+        }
+        if (infoWindowRef.current) {
             infoWindowRef.current.close();
           }
           if (!allowCreateMarkerRef.current) return;
@@ -127,7 +136,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
           const lat = lnglat.getLat();
           new win.AMap.Geocoder().getAddress([lng, lat], (_s, r) => {
             const addr = (r?.regeocode as Record<string, unknown> | undefined)?.formattedAddress as string | undefined;
-            onMapClick(lng, lat, addr ?? "");
+            onMapClickRef.current(lng, lat, addr ?? "");
           });
         });
       } catch { /* ignored */ }
@@ -150,7 +159,8 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
       const mk = new win.AMap.Marker({ position: [row.lng, row.lat], title: row.placeName, icon: markerIcon(row.color ?? "#3b82f6"), offset: new win.AMap.Pixel(-12, -34) });
       mk.setMap(map);
       mk.on("click", () => {
-        onMarkerClick(row);
+        markerClickedRef.current = true;
+        onMarkerClickRef.current(row);
         renderInfoWindow(row);
       });
       makerRef.current.set(row.id, mk);
