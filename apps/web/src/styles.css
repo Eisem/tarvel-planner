@@ -1562,6 +1562,36 @@ input:focus {
   padding: 0 4px;
 }
 
+.confirm-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 340px;
+  max-width: 90vw;
+  display: grid;
+  gap: 16px;
+  box-shadow: 0 20px 50px rgba(10, 30, 60, 0.22);
+  animation: modal-in 0.18s ease-out;
+  text-align: center;
+}
+.confirm-card .confirm-msg {
+  font-size: 15px;
+  color: #1e293b;
+  line-height: 1.5;
+  margin: 0;
+}
+.confirm-card .confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.confirm-card .confirm-actions .btn {
+  min-width: 80px;
+  padding: 8px 20px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
 /* ---- Voting Page ---- */
 .vote-shell {
   display: flex;
@@ -2346,19 +2376,12 @@ input:focus {
     text-align: center;
   }
 
-  .modal-content {
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    border-radius: 0;
-  }
-
   .toast {
     left: 12px;
     right: 12px;
     transform: none;
     max-width: none;
-    top: 72px;
+    top: 44px;
   }
 
   @keyframes toastIn {

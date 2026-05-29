@@ -280,6 +280,7 @@ export function WorkbenchPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1176,15 +1177,15 @@ export function WorkbenchPage() {
   async function deleteMarker(markerId: string) {
     if (!memberNickname || !roomId) return;
     try {
-      setError("");
       await api.deleteMarker(markerId, { nickname: memberNickname });
       await refreshMarkers(roomId);
       if (selectedMarkerId === markerId) {
         setSelectedMarkerId("");
         setDraftForm(null);
       }
+      setToast({ message: "地点已删除", type: "success" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "删除标点失败");
+      setToast({ message: e instanceof Error ? e.message : "删除标点失败", type: "error" });
     }
   }
 
@@ -1199,7 +1200,7 @@ export function WorkbenchPage() {
       setError("");
       const result = await searchPoi(mapInstanceRef.current, searchKeyword);
       if (result.items.length === 0) {
-        setError("未找到匹配地点，请更换关键词");
+        setToast({ message: "未找到匹配地点，请更换关键词", type: "error" });
         return;
       }
       setPoiSearchResults(result.items);
@@ -1619,7 +1620,10 @@ export function WorkbenchPage() {
                               map.setZoom(14);
                             }
                           }}
-                          onDelete={deleteMarker}
+                          onDelete={(id) => {
+                            const marker = markers.find((m) => m.id === id);
+                            setDeleteTarget({ id, name: marker?.placeName ?? "未知地点" });
+                          }}
                         />
                       </li>
                     ))}
@@ -1946,6 +1950,18 @@ export function WorkbenchPage() {
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
+            <p className="confirm-msg">确定删除地点「{deleteTarget.name}」？</p>
+            <div className="confirm-actions">
+              <button className="btn" onClick={() => setDeleteTarget(null)}>取消</button>
+              <button className="btn" style={{ background: "#ef4444", color: "#fff" }} onClick={() => { deleteMarker(deleteTarget.id); setDeleteTarget(null); }}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
