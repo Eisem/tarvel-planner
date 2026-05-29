@@ -302,7 +302,9 @@ input:focus {
 }
 
 .room-code-value {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 20px;
   font-weight: 800;
   color: #11243d;
@@ -314,24 +316,28 @@ input:focus {
   font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
 }
 
-.copy-btn {
-  border: 1px solid #aec4e3;
-  border-radius: 8px;
-  background: #fff;
+.copy-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: #3b6ddb;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 10px;
   cursor: pointer;
-  transition: background 0.12s;
+  padding: 2px;
+  line-height: 1;
+  opacity: 0.65;
+  transition: opacity 0.12s;
+  margin-left: 2px;
 }
-
-.copy-btn:hover {
-  background: #eaf2ff;
+.copy-icon-btn svg {
+  width: 0.75em;
+  height: 0.75em;
 }
-
-.copy-btn:active {
-  background: #d3e3fb;
+.copy-icon-btn:hover {
+  opacity: 1;
+  background: rgba(59, 109, 219, 0.08);
 }
 
 .wb-layout {
@@ -1865,44 +1871,49 @@ input:focus {
 
   /* ====== Header ====== */
   .wb-header {
-    align-items: flex-start;
-    gap: 8px;
-    flex-wrap: wrap;
-    padding: 10px 12px;
-  }
-
-  .wb-header h1 {
-    font-size: 16px;
-  }
-
-  .wb-header-right {
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    padding: 8px 11px;
     gap: 6px;
+    flex-wrap: nowrap;
   }
-
+  .wb-header > div:first-child {
+    min-width: 0;
+    overflow: hidden;
+    flex-shrink: 3;
+  }
+  .wb-header h1 {
+    font-size: 13px;
+    margin: 1px 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wb-header-right {
+    gap: 6px;
+    flex-shrink: 0;
+  }
   .wb-header-right .btn {
-    font-size: 12px;
-    padding: 6px 10px;
+    font-size: 10px;
+    padding: 4px 7px;
+    border-radius: 7px;
+    white-space: nowrap;
   }
-
+  .room-code {
+    font-size: 8px;
+    gap: 5px;
+  }
+  .room-code-value {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.04em;
+  }
   .room-code-inline {
     gap: 4px;
   }
-
-  .room-code-label {
-    font-size: 12px;
-  }
-
-  .room-code-value {
-    font-size: 13px;
-    padding: 2px 8px;
-  }
-
-  .copy-btn {
-    font-size: 11px;
-    padding: 3px 8px;
+  .copy-icon-btn {
+    padding: 1px;
+    margin-left: 5px;
+    transform: translateY(1px);
   }
 
   .wb-message {
