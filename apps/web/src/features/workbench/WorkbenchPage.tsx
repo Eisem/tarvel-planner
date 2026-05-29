@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import {
@@ -48,8 +48,96 @@ const MIN_DURATION_MINUTES = 15;
 const SNAP_MINUTES = 15;
 const DAY_MINUTES = 24 * 60;
 const TIMELINE_PIXEL_HEIGHT = 520;
-const DRAWER_SNAP_ORDER: DrawerSnap[] = ["peek", "mid", "full"];
-const DRAWER_DRAG_THRESHOLD = 56;
+const DRAWER_DRAG_THRESHOLD = 4;
+
+function useDrawerDrag(snap: DrawerSnap, onSnapChange: (s: DrawerSnap) => void) {
+  const [isDragging, setIsDragging] = useState(false);
+  const elementRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; startTime: number } | null>(null);
+  const didDragRef = useRef(false);
+
+  const setDrawerRef = useCallback((el: HTMLElement | null) => {
+    elementRef.current = el;
+  }, []);
+
+  function getHeights() {
+    return { peek: 104, mid: document.documentElement.clientHeight * 0.52, full: document.documentElement.clientHeight - 52 } as const;
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (e.button !== 0) return;
+    const el = elementRef.current;
+    if (!el) return;
+    const h = getHeights();
+    const curH = el.getBoundingClientRect().height;
+    dragRef.current = { pointerId: e.pointerId, startY: e.clientY, startHeight: curH, startTime: Date.now() };
+    didDragRef.current = false;
+    setIsDragging(true);
+    el.style.transition = "none";
+    el.style.height = `${curH}px`;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: ReactPointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const el = elementRef.current;
+    if (!el) return;
+    const h = getHeights();
+    const px = d.startHeight - (e.clientY - d.startY);
+    if (Math.abs(e.clientY - d.startY) > 8) didDragRef.current = true;
+    el.style.height = `${Math.max(h.peek, Math.min(h.full, px))}px`;
+  }
+
+  function handlePointerEnd(e: ReactPointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const el = elementRef.current;
+    const deltaY = e.clientY - d.startY;
+    const elapsed = Math.max(1, Date.now() - d.startTime);
+    const velocity = deltaY / elapsed;
+    const currentHeight = d.startHeight - deltaY;
+    dragRef.current = null;
+    if (el) { el.style.transition = ""; }
+    setIsDragging(false);
+    const h = getHeights();
+    const absDelta = Math.abs(deltaY);
+    const absVel = Math.abs(velocity);
+    let targetSnap: DrawerSnap;
+    if (absDelta <= DRAWER_DRAG_THRESHOLD && absVel <= 0.45) {
+      targetSnap = snap;
+    } else if (absVel > 1.0) {
+      targetSnap = velocity < 0 ? "full" : "peek";
+    } else {
+      const distances = [
+        { snap: "peek" as const, dist: Math.abs(currentHeight - h.peek) },
+        { snap: "mid" as const, dist: Math.abs(currentHeight - h.mid) },
+        { snap: "full" as const, dist: Math.abs(currentHeight - h.full) },
+      ];
+      distances.sort((a, b) => a.dist - b.dist);
+      targetSnap = distances[0].snap;
+    }
+    onSnapChange(targetSnap);
+    requestAnimationFrame(() => {
+      if (elementRef.current) {
+        elementRef.current.style.height = "";
+      }
+    });
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
+  function handleHeaderClick() {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+    const order: DrawerSnap[] = ["peek", "mid", "full"];
+    const idx = order.indexOf(snap);
+    onSnapChange(order[(idx + 1) % 3]);
+  }
+
+  return { isDragging, setDrawerRef, handlePointerDown, handlePointerMove, handlePointerEnd, handleHeaderClick };
+}
 
 /* ====== DnD Sub-Components ====== */
 
@@ -296,10 +384,9 @@ export function WorkbenchPage() {
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
   const [isMobile, setIsMobile] = useState(false);
   const [drawerSnap, setDrawerSnap] = useState<DrawerSnap>("mid");
-  const [drawerDragOffset, setDrawerDragOffset] = useState(0);
-  const [isDrawerDragging, setIsDrawerDragging] = useState(false);
+  const [plannerDrawerSnap, setPlannerDrawerSnap] = useState<DrawerSnap>("full");
   const [mobilePlannerOpen, setMobilePlannerOpen] = useState(false);
-  const [scheduleExpanded, setScheduleExpanded] = useState(false);
+  const prevDrawerSnapRef = useRef<DrawerSnap>("mid");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
   const [createPlanMode, setCreatePlanMode] = useState(false);
@@ -331,8 +418,8 @@ export function WorkbenchPage() {
     color: string;
   }> | undefined;
   const routeCacheRef = useRef<RoutePathsResult>(undefined);
-  const drawerDragRef = useRef<{ pointerId: number; startY: number; startTime: number } | null>(null);
-  const drawerDidDragRef = useRef(false);
+  const leftDrawer = useDrawerDrag(drawerSnap, setDrawerSnap);
+  const plannerDrawer = useDrawerDrag(plannerDrawerSnap, setPlannerDrawerSnap);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
   const selectedMarker = useMemo(() => markers.find((marker) => marker.id === selectedMarkerId) ?? null, [markers, selectedMarkerId]);
   const canEditSelectedMarker = useMemo(
@@ -644,85 +731,10 @@ export function WorkbenchPage() {
   useEffect(() => {
     if (!isMobile) {
       setMobilePlannerOpen(false);
-    } else {
-      setDrawerSnap("mid");
-      setDrawerDragOffset(0);
     }
   }, [isMobile]);
 
-  useEffect(() => {
-    if (!isMobile) return;
-    if (createPlanMode || draftForm || poiSearchResults.length > 0) {
-      setDrawerSnap("full");
-    }
-  }, [createPlanMode, draftForm, isMobile, poiSearchResults.length]);
-
-  const drawerStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!isMobile) return undefined;
-    return { "--drawer-drag-offset": `${drawerDragOffset}px` } as CSSProperties;
-  }, [drawerDragOffset, isMobile]);
-
-  function cycleDrawerSnap() {
-    setDrawerSnap((current) => {
-      const nextIndex = (DRAWER_SNAP_ORDER.indexOf(current) + 1) % DRAWER_SNAP_ORDER.length;
-      return DRAWER_SNAP_ORDER[nextIndex];
-    });
-  }
-
-  function moveDrawerSnap(direction: "up" | "down") {
-    setDrawerSnap((current) => {
-      const currentIndex = DRAWER_SNAP_ORDER.indexOf(current);
-      const nextIndex = direction === "up"
-        ? Math.min(DRAWER_SNAP_ORDER.length - 1, currentIndex + 1)
-        : Math.max(0, currentIndex - 1);
-      return DRAWER_SNAP_ORDER[nextIndex];
-    });
-  }
-
-  function handleDrawerPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (!isMobile || event.button !== 0) return;
-    drawerDragRef.current = { pointerId: event.pointerId, startY: event.clientY, startTime: Date.now() };
-    drawerDidDragRef.current = false;
-    setIsDrawerDragging(true);
-    setDrawerDragOffset(0);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function handleDrawerPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
-    const drag = drawerDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const rawOffset = event.clientY - drag.startY;
-    if (Math.abs(rawOffset) > 8) drawerDidDragRef.current = true;
-    setDrawerDragOffset(Math.max(-160, Math.min(160, rawOffset)));
-  }
-
-  function handleDrawerPointerEnd(event: ReactPointerEvent<HTMLButtonElement>) {
-    const drag = drawerDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const deltaY = event.clientY - drag.startY;
-    const elapsed = Math.max(1, Date.now() - drag.startTime);
-    const velocity = deltaY / elapsed;
-    drawerDragRef.current = null;
-    setIsDrawerDragging(false);
-    setDrawerDragOffset(0);
-    if (deltaY < -DRAWER_DRAG_THRESHOLD || velocity < -0.45) {
-      moveDrawerSnap("up");
-    } else if (deltaY > DRAWER_DRAG_THRESHOLD || velocity > 0.45) {
-      moveDrawerSnap("down");
-    }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
-
-  function handleDrawerHeaderClick() {
-    if (drawerDidDragRef.current) {
-      drawerDidDragRef.current = false;
-      return;
-    }
-    cycleDrawerSnap();
-  }
-
+  
   function normalizeOrder(items: PlanItemDraft[]) {
     return items
       .slice()
@@ -786,7 +798,10 @@ export function WorkbenchPage() {
     setActiveDraftId(draft.id);
     setLeftTab("snapshots");
     if (isMobile) {
+      prevDrawerSnapRef.current = drawerSnap;
       setMobilePlannerOpen(true);
+      setPlannerDrawerSnap("full");
+      setDrawerSnap("peek");
     }
     setMapFitKey((n) => n + 1);
     setSelectedForSnapshot([]);
@@ -1461,17 +1476,17 @@ export function WorkbenchPage() {
       >
         <motion.div className="wb-layout" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
           <aside
-            className={`wb-left drawer-${drawerSnap}${isDrawerDragging ? " dragging" : ""}`}
-            style={drawerStyle}
+            className={`wb-left drawer-${drawerSnap}${leftDrawer.isDragging ? " dragging" : ""}${mobilePlannerOpen ? " planner-hidden" : ""}`}
+            ref={leftDrawer.setDrawerRef}
           >
             <button
               type="button"
               className="drawer-grip-zone"
-              onPointerDown={handleDrawerPointerDown}
-              onPointerMove={handleDrawerPointerMove}
-              onPointerUp={handleDrawerPointerEnd}
-              onPointerCancel={handleDrawerPointerEnd}
-              onClick={handleDrawerHeaderClick}
+              onPointerDown={leftDrawer.handlePointerDown}
+              onPointerMove={leftDrawer.handlePointerMove}
+              onPointerUp={leftDrawer.handlePointerEnd}
+              onPointerCancel={leftDrawer.handlePointerEnd}
+              onClick={leftDrawer.handleHeaderClick}
               aria-label="切换地点与方案抽屉高度"
             >
               <span className="drawer-grip" />
@@ -1640,7 +1655,7 @@ export function WorkbenchPage() {
                         <button className="draft-open" onClick={() => {
                           setActiveDraftId(draft.id);
                           setMapFitKey((n) => n + 1);
-                          if (isMobile) setMobilePlannerOpen(true);
+                          if (isMobile) { prevDrawerSnapRef.current = drawerSnap; setMobilePlannerOpen(true); setPlannerDrawerSnap("full"); setDrawerSnap("peek"); }
                         }}>
                           <strong>{draft.title}</strong>
                           <small>{draft.planItems.length} 个行程点</small>
@@ -1774,41 +1789,44 @@ export function WorkbenchPage() {
             />
           </main>
 
-          <aside className={`wb-right${scheduleExpanded ? " expanded" : ""}${mobilePlannerOpen ? " mobile-planner-open" : ""}`}>
+          <aside
+            className={`wb-right${mobilePlannerOpen ? " mobile-planner-open" : ""}${mobilePlannerOpen ? ` planner-${plannerDrawerSnap}` : ""}${plannerDrawer.isDragging ? " dragging" : ""}`}
+            ref={mobilePlannerOpen ? plannerDrawer.setDrawerRef : undefined}
+          >
             {isMobile && mobilePlannerOpen && activeDraft ? (
-              <div className="mobile-planner-header">
-                <button className="btn btn-sm" onClick={() => setMobilePlannerOpen(false)}>返回</button>
-                <div className="mobile-planner-title">
-                  <strong>{activeDraft.title}</strong>
-                  <small>{activeDraft.planItems.length} 个行程点</small>
-                </div>
-              </div>
-            ) : null}
-            {false && isMobile && leftTab === "markers" ? (
-              <button className="create-plan-btn mobile-create-in-right" onClick={() => {
-                setCreatePlanMode(true);
-                setSelectedForSnapshot([]);
-                setDraftForm(null);
-                setError("");
-              }}>
-                + 创建方案
-              </button>
-            ) : (
               <>
-            <div className="schedule-header-row">
-              <h4>行程编排</h4>
-              {isMobile && activeDraft ? (
-                <button className="schedule-expand-btn" onClick={() => setScheduleExpanded((v) => !v)} title={scheduleExpanded ? "收起" : "展开全屏"}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    {scheduleExpanded ? (
-                      <path d="M18 15l-6-6-6 6" />
-                    ) : (
-                      <path d="M6 9l6 6 6-6" />
-                    )}
-                  </svg>
+                <button
+                  type="button"
+                  className="drawer-grip-zone planner-grip"
+                  onPointerDown={plannerDrawer.handlePointerDown}
+                  onPointerMove={plannerDrawer.handlePointerMove}
+                  onPointerUp={plannerDrawer.handlePointerEnd}
+                  onPointerCancel={plannerDrawer.handlePointerEnd}
+                  onClick={plannerDrawer.handleHeaderClick}
+                  aria-label="调整行程编排高度"
+                >
+                  <span className="drawer-grip" />
                 </button>
-              ) : null}
-            </div>
+                <div className="mobile-planner-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px 10px" }}>
+                    <button className="btn btn-sm" onClick={() => {
+                      setMobilePlannerOpen(false);
+                      setDrawerSnap(prevDrawerSnapRef.current);
+                    }}>返回</button>
+                    <div className="mobile-planner-title">
+                      <strong>{activeDraft.title}</strong>
+                      <small>{activeDraft.planItems.length} 个行程点</small>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : null}
+            {(() => {
+              const inner = (
+                <>
+          <div className="schedule-header-row">
+            <h4>行程编排</h4>
+          </div>
             {leftTab !== "snapshots" || !activeDraft ? (
               <p className="page-note">请先进入方案管理并打开一个本地方案，再进行行程编排。</p>
             ) : (
@@ -1935,10 +1953,14 @@ export function WorkbenchPage() {
                 ) : null}
               </>
             )}
-            </>
-            )}
+
+                </>
+              );
+              return isMobile && mobilePlannerOpen && activeDraft ? (
+                <div className="planner-drawer-body">{inner}</div>
+              ) : inner;
+            })()}
           </aside>
-          {scheduleExpanded ? <div className="schedule-expand-backdrop" onClick={() => setScheduleExpanded(false)} /> : null}
         </motion.div>
 
         <DragOverlay dropAnimation={null}>

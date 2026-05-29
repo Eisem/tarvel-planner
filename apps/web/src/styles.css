@@ -1957,27 +1957,59 @@ input:focus {
     padding: 10px;
   }
 
+  /* ====== Mobile planner drawer ====== */
+  .wb-left.planner-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 0.22s, transform 0.22s;
+  }
+
   .wb-right.mobile-planner-open {
     position: fixed;
-    inset: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     z-index: 90;
     display: flex;
     flex-direction: column;
-    max-height: none;
-    border-radius: 0;
-    border: none;
+    height: 52dvh;
+    min-height: 104px;
+    max-height: calc(100dvh - 52px);
+    border-radius: 22px 22px 0 0;
+    border-width: 1px 0 0;
+    border-color: #dce6f3;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 -18px 42px rgba(12, 32, 58, 0.22);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
     padding: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    background: #f4f8fd;
+    transition: height 0.22s ease;
+    contain: none;
+  }
+
+  .wb-right.planner-peek {
+    height: 104px;
+  }
+
+  .wb-right.planner-mid {
+    height: 52dvh;
+  }
+
+  .wb-right.planner-full {
+    height: calc(100dvh - 52px);
+  }
+
+  .wb-right.dragging {
+    transition: none !important;
+  }
+
+  .wb-right.mobile-planner-open .drawer-grip-zone.planner-grip {
+    flex: 0 0 auto;
   }
 
   .mobile-planner-header {
     flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: calc(env(safe-area-inset-top) + 10px) 12px 10px;
     border-bottom: 1px solid #dce6f3;
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 8px 20px rgba(16, 40, 74, 0.08);
@@ -2006,23 +2038,19 @@ input:focus {
     font-size: 12px;
   }
 
-  .wb-right.mobile-planner-open > .schedule-header-row,
-  .wb-right.mobile-planner-open > .draft-title-input,
-  .wb-right.mobile-planner-open > .row-btns,
-  .wb-right.mobile-planner-open > .page-note,
-  .wb-right.mobile-planner-open > .timeline-day-switch,
-  .wb-right.mobile-planner-open > .timeline-column,
-  .wb-right.mobile-planner-open > .wb-actions,
-  .wb-right.mobile-planner-open > .mobile-place-bank {
-    margin-left: 12px;
-    margin-right: 12px;
+  .planner-drawer-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
   }
 
-  .wb-right.mobile-planner-open > .schedule-header-row {
-    margin-top: 12px;
-  }
-
-  .wb-right.mobile-planner-open .timeline-column {
+  .planner-drawer-body .timeline-column {
     height: min(50vh, 460px);
     min-height: 320px;
     flex: 0 0 auto;
@@ -2362,13 +2390,10 @@ input:focus {
   }
 
   .wb-actions {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    padding: 8px 10px;
+    position: static;
+    padding: 8px 0;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(6px);
+    background: transparent;
   }
 
   .wb-actions .btn {
