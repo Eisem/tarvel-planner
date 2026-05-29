@@ -213,6 +213,7 @@ input:focus {
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
+  font-family: inherit;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -1892,8 +1893,15 @@ input:focus {
     flex-shrink: 0;
   }
   .wb-header-right .btn {
-    font-size: 10px;
-    padding: 4px 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 11px;
+    padding: 6px 6px;
+    line-height: 1;
+    min-height: 0;
+    font-family: inherit;
     border-radius: 7px;
     white-space: nowrap;
   }
@@ -1906,6 +1914,7 @@ input:focus {
     padding: 2px 8px;
     border-radius: 6px;
     letter-spacing: 0.04em;
+    line-height: 1;
   }
   .room-code-inline {
     gap: 4px;
