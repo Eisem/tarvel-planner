@@ -239,8 +239,8 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
       route.stops.forEach((stop) => {
         let size = 22, bg = route.color, label = stop.label;
         if (stop.isFirst && stop.isLast) { size = 30; bg = route.color; label = "1"; }
-        else if (stop.isFirst) { size = 30; bg = "#1d4ed8"; label = "起"; }
-        else if (stop.isLast)  { size = 30; bg = "#1e40af"; label = "终"; }
+        else if (stop.isFirst) { size = 30; bg = route.color; label = "起"; }
+        else if (stop.isLast)  { size = 30; bg = route.color; label = "终"; }
         const ring = Math.min(18, Math.max(4, Math.round(stop.stopMinutes / 20)));
         const content = `<div style="position:relative;width:${size}px;height:${size}px;line-height:${size}px;border-radius:999px;background:${bg};color:#fff;font-size:${stop.isFirst || stop.isLast ? 13 : 11}px;font-weight:700;text-align:center;box-shadow:0 8px 16px rgba(29,78,216,0.35);border:2px solid #eff6ff;"><span style="position:absolute;inset:-${ring / 2}px;border:1px solid rgba(29,78,216,0.28);border-radius:999px;"></span>${label}</div>`;
         const mk = new win.AMap.Marker({

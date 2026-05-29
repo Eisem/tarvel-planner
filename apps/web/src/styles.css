@@ -743,6 +743,10 @@ input:focus {
   background: rgba(239, 68, 68, 0.08);
 }
 
+.draft-mobile-actions {
+  display: none;
+}
+
 .shared-preview {
   margin-top: 4px;
   border: 1px solid #d6e4f6;
@@ -2015,6 +2019,28 @@ input:focus {
     box-shadow: 0 8px 20px rgba(16, 40, 74, 0.08);
   }
 
+  .mobile-planner-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px 10px;
+  }
+
+  .mobile-planner-back {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #d4e2f4;
+    border-radius: 12px;
+    background: #fff;
+    color: #0f2745;
+    display: grid;
+    place-content: center;
+    font-family: inherit;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
   .mobile-planner-title {
     min-width: 0;
     display: grid;
@@ -2270,6 +2296,192 @@ input:focus {
 
   .draft-card {
     padding: 10px 38px 10px 10px;
+  }
+
+  .draft-mobile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .draft-mobile-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(122px, 40%);
+    gap: 8px;
+    align-items: start;
+  }
+
+  .draft-card .draft-mobile-actions .btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .draft-preview-switch {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+    align-items: center;
+    gap: 4px;
+    min-height: 38px;
+    border: 1px solid #c7daf4;
+    border-radius: 12px;
+    background: #eef5ff;
+    padding: 4px;
+    color: #1e4fa3;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .draft-preview-switch span {
+    min-width: 0;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .draft-preview-arrow {
+    width: 28px;
+    height: 30px;
+    border: 1px solid #c4d7f1;
+    border-radius: 9px;
+    background: #fff;
+    color: #1f5fbf;
+    display: grid;
+    place-content: center;
+    font-family: inherit;
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .draft-preview-arrow:disabled {
+    color: #b8c6d8;
+    background: #f5f8fc;
+    cursor: default;
+  }
+
+  .draft-delete-mobile {
+    color: #b91c1c;
+    border-color: #fecaca;
+    background: #fff5f5;
+  }
+
+  .draft-card:has(.draft-mobile-actions) {
+    padding-right: 10px;
+  }
+
+  .day-count-stepper {
+    display: grid;
+    grid-template-columns: minmax(92px, 1fr) 44px minmax(72px, 1fr) 44px;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #dbe7f7;
+    border-radius: 14px;
+    background: #f4f8ff;
+    padding: 10px;
+  }
+
+  .mobile-schedule-control {
+    display: grid;
+    gap: 10px;
+  }
+
+  .mobile-plan-card {
+    width: 100%;
+    min-height: 52px;
+    border: 1px solid #d4e2f4;
+    border-radius: 14px;
+    background: #fff;
+    color: #0f2745;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 20px;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-weight: 800;
+    text-align: left;
+  }
+
+  .mobile-plan-card span:nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-plan-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: #e8f1ff;
+    color: #2f6ad2;
+    display: grid;
+    place-content: center;
+    position: relative;
+  }
+
+  .mobile-plan-icon::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+    box-sizing: border-box;
+  }
+
+  .mobile-plan-icon::after {
+    content: "";
+    position: absolute;
+    left: 7px;
+    right: 7px;
+    top: 8px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 2px;
+  }
+
+  .mobile-plan-chevron {
+    color: #587395;
+    font-size: 26px;
+    line-height: 1;
+  }
+
+  .day-count-label {
+    color: #45617f;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .day-count-btn {
+    width: 44px;
+    height: 44px;
+    border: 1px solid #cbdcf1;
+    border-radius: 10px;
+    background: #f5f9ff;
+    color: #1f5fbf;
+    font-size: 22px;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .day-count-btn:disabled {
+    color: #b9c6d6;
+    background: #eef3f8;
+    cursor: default;
+  }
+
+  .day-count-value {
+    min-height: 44px;
+    border: 1px solid #d4e2f4;
+    border-radius: 10px;
+    background: #fff;
+    color: #0f2745;
+    display: grid;
+    place-content: center;
+    font-weight: 800;
+    font-size: 15px;
   }
 
   .planner-place-item {

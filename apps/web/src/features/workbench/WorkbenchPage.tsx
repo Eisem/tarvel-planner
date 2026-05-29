@@ -39,6 +39,7 @@ type DraftForm = {
 };
 
 type DrawerSnap = "peek" | "mid" | "full";
+type MobilePreviewDay = "all" | number;
 
 const MIN_DAYS = 1;
 const MAX_DAYS = 14;
@@ -386,6 +387,8 @@ export function WorkbenchPage() {
   const [drawerSnap, setDrawerSnap] = useState<DrawerSnap>("mid");
   const [plannerDrawerSnap, setPlannerDrawerSnap] = useState<DrawerSnap>("full");
   const [mobilePlannerOpen, setMobilePlannerOpen] = useState(false);
+  const [mobilePreviewDraftId, setMobilePreviewDraftId] = useState("");
+  const [mobilePreviewDay, setMobilePreviewDay] = useState<MobilePreviewDay>("all");
   const prevDrawerSnapRef = useRef<DrawerSnap>("mid");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
@@ -506,6 +509,10 @@ export function WorkbenchPage() {
     return result;
   }, [activeDraft, activeDraftMarkerIds, activeDraftMarkerList, leftTab, markers, memberColor, memberId, memberNickname]);
   const activeDayCount = activeDraft?.dayCount ?? 3;
+  const mobilePreviewDraft = useMemo(
+    () => drafts.find((draft) => draft.id === mobilePreviewDraftId) ?? null,
+    [drafts, mobilePreviewDraftId]
+  );
 
   const draftItemsByDay = useMemo(() => {
     const grouped = new Map<number, PlanItemDraft[]>();
@@ -526,7 +533,7 @@ export function WorkbenchPage() {
   }, [activeDraft]);
   const timelineItems = useMemo(() => (draftItemsByDay.get(activeTimelineDay) ?? []), [draftItemsByDay, activeTimelineDay]);
 
-  const DAY_COLORS = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#0ea5e9", "#0284c7", "#0369a1"];
+  const DAY_COLORS = ["#2563eb", "#f97316", "#16a34a", "#dc2626", "#7c3aed", "#0891b2", "#ca8a04"];
 
   const timelineSchedule = useMemo(() => {
     return timelineItems.map((item) => {
@@ -542,15 +549,30 @@ export function WorkbenchPage() {
       return routeCacheRef.current;
     }
     if (leftTab !== "snapshots") return undefined;
-    if (!activeDraft || activeDraft.planItems.length === 0) return undefined;
+    const routeDraft = isMobile && !mobilePlannerOpen && mobilePreviewDraft ? mobilePreviewDraft : activeDraft;
+    if (!routeDraft || routeDraft.planItems.length === 0) return undefined;
     const routes: Array<{
       dayIndex: number;
       path: [number, number][];
       stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }>;
       color: string;
     }> = [];
-    draftItemsByDay.forEach((items, dayIndex) => {
-      if (dayIndex !== activeTimelineDay) return;
+    const routeItemsByDay = new Map<number, PlanItemDraft[]>();
+    routeDraft.planItems.forEach((item) => {
+      const list = routeItemsByDay.get(item.dayIndex) ?? [];
+      list.push(item);
+      routeItemsByDay.set(
+        item.dayIndex,
+        list.sort(
+          (a, b) =>
+            (a.startMinutes ?? DEFAULT_START_MINUTES) - (b.startMinutes ?? DEFAULT_START_MINUTES) ||
+            a.orderIndex - b.orderIndex
+        )
+      );
+    });
+    const dayFilter: MobilePreviewDay = isMobile && !mobilePlannerOpen && routeDraft === mobilePreviewDraft ? mobilePreviewDay : activeTimelineDay;
+    routeItemsByDay.forEach((items, dayIndex) => {
+      if (dayFilter !== "all" && dayIndex !== dayFilter) return;
       if (items.length < 2) return;
       const path: [number, number][] = [];
       const stops: Array<{ lng: number; lat: number; label: string; isFirst: boolean; isLast: boolean; stopMinutes: number }> = [];
@@ -576,7 +598,7 @@ export function WorkbenchPage() {
     const result = routes.length > 0 ? routes : undefined;
     routeCacheRef.current = result;
     return result;
-  }, [activeDraft, draftItemsByDay, markerLookup, leftTab, activeTimelineDay]);
+  }, [activeDraft, activeTimelineDay, isMobile, leftTab, markerLookup, mobilePlannerOpen, mobilePreviewDay, mobilePreviewDraft]);
 
   useEffect(() => {
     if (!roomCode || !storageKey) return;
@@ -696,13 +718,18 @@ export function WorkbenchPage() {
     if (leftTab !== "snapshots") return;
     if (drafts.length === 0) {
       setActiveDraftId("");
+      setMobilePreviewDraftId("");
       return;
     }
     const exists = drafts.some((draft) => draft.id === activeDraftId);
     if (!exists) {
       setActiveDraftId(drafts[0].id);
     }
-  }, [leftTab, drafts, activeDraftId]);
+    if (!mobilePreviewDraftId || !drafts.some((draft) => draft.id === mobilePreviewDraftId)) {
+      setMobilePreviewDraftId(drafts[0].id);
+      setMobilePreviewDay("all");
+    }
+  }, [leftTab, drafts, activeDraftId, mobilePreviewDraftId]);
 
   useEffect(() => {
     if (activeTimelineDay > activeDayCount) {
@@ -899,6 +926,31 @@ export function WorkbenchPage() {
     const startMinutes = Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, lastEnd);
     handleDropOnDay(marker.markerId, activeTimelineDay, startMinutes);
     setToast({ message: `已添加「${marker.placeName}」到第 ${activeTimelineDay} 天`, type: "success" });
+  }
+
+  function getMobilePreviewDayForDraft(draft: DraftSnapshot): MobilePreviewDay {
+    return mobilePreviewDraftId === draft.id ? mobilePreviewDay : "all";
+  }
+
+  function shiftMobilePreviewDay(draft: DraftSnapshot, direction: -1 | 1) {
+    const dayCount = draft.dayCount ?? 3;
+    const current = getMobilePreviewDayForDraft(draft);
+    let next: MobilePreviewDay = current;
+    if (direction > 0) {
+      next = current === "all" ? 1 : Math.min(dayCount, current + 1);
+    } else {
+      next = current === "all" ? "all" : current <= 1 ? "all" : current - 1;
+    }
+    setMobilePreviewDraftId(draft.id);
+    setMobilePreviewDay(next);
+    setActiveDraftId(draft.id);
+    setMapFitKey((n) => n + 1);
+  }
+
+  function getMobilePreviewLabel(draft: DraftSnapshot) {
+    const current = getMobilePreviewDayForDraft(draft);
+    if (current === "all") return "全部天数";
+    return `第${current}天`;
   }
 
   function removePlanItem(markerId: string, dayIndex: number) {
@@ -1652,15 +1704,65 @@ export function WorkbenchPage() {
                   <div className="draft-cards">
                     {drafts.map((draft) => (
                       <article key={draft.id} className={activeDraftId === draft.id ? "draft-card active" : "draft-card"}>
-                        <button className="draft-open" onClick={() => {
-                          setActiveDraftId(draft.id);
-                          setMapFitKey((n) => n + 1);
-                          if (isMobile) { prevDrawerSnapRef.current = drawerSnap; setMobilePlannerOpen(true); setPlannerDrawerSnap("full"); setDrawerSnap("peek"); }
-                        }}>
-                          <strong>{draft.title}</strong>
-                          <small>{draft.planItems.length} 个行程点</small>
-                        </button>
-                        <button className="draft-delete" onClick={() => deleteDraft(draft.id)}>×</button>
+                        {isMobile ? (
+                          <>
+                            <div className="draft-mobile-head">
+                              <button className="draft-open" onClick={() => {
+                                setActiveDraftId(draft.id);
+                                setMobilePreviewDraftId(draft.id);
+                                setMobilePreviewDay("all");
+                                setMapFitKey((n) => n + 1);
+                              }}>
+                                <strong>{draft.title}</strong>
+                                <small>{draft.planItems.length} 个行程点</small>
+                              </button>
+                              <div className="draft-preview-switch" aria-label="切换路线预览天数">
+                                <button
+                                  className="draft-preview-arrow"
+                                  disabled={getMobilePreviewDayForDraft(draft) === "all"}
+                                  onClick={() => shiftMobilePreviewDay(draft, -1)}
+                                >
+                                  &lt;
+                                </button>
+                                <span>{getMobilePreviewLabel(draft)}</span>
+                                <button
+                                  className="draft-preview-arrow"
+                                  disabled={getMobilePreviewDayForDraft(draft) === (draft.dayCount ?? 3)}
+                                  onClick={() => shiftMobilePreviewDay(draft, 1)}
+                                >
+                                  &gt;
+                                </button>
+                              </div>
+                            </div>
+                            <div className="draft-mobile-actions">
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => {
+                                  setActiveDraftId(draft.id);
+                                  setMapFitKey((n) => n + 1);
+                                  prevDrawerSnapRef.current = drawerSnap;
+                                  setMobilePlannerOpen(true);
+                                  setPlannerDrawerSnap("full");
+                                  setDrawerSnap("peek");
+                                }}
+                              >
+                                编辑
+                              </button>
+                              <button className="btn btn-sm draft-delete-mobile" onClick={() => deleteDraft(draft.id)}>删除</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <button className="draft-open" onClick={() => {
+                              setActiveDraftId(draft.id);
+                              setMapFitKey((n) => n + 1);
+                            }}>
+                              <strong>{draft.title}</strong>
+                              <small>{draft.planItems.length} 个行程点</small>
+                            </button>
+                            <button className="draft-delete" onClick={() => deleteDraft(draft.id)}>×</button>
+                          </>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -1684,7 +1786,7 @@ export function WorkbenchPage() {
                     </div>
                   ) : null}
 
-                  {activeDraft ? (
+                  {activeDraft && !isMobile ? (
                     <div className="snapshot-place-bank">
                       <div className="row-btns">
                         <h4>地点列表（{isMobile ? "长按地点添加到本日行程" : "拖到右侧行程"}）</h4>
@@ -1726,7 +1828,7 @@ export function WorkbenchPage() {
         </aside>
 
         <main className="wb-center">
-            {routePaths && routePaths.length > 0 ? (
+            {isMobile && !mobilePlannerOpen && mobilePreviewDay === "all" && routePaths && routePaths.length > 0 ? (
               <div className="route-legend-card">
                 <strong>路线图例</strong>
                 <div className="route-legend-list">
@@ -1808,11 +1910,11 @@ export function WorkbenchPage() {
                   <span className="drawer-grip" />
                 </button>
                 <div className="mobile-planner-header">
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px 10px" }}>
-                    <button className="btn btn-sm" onClick={() => {
+                  <div className="mobile-planner-topbar">
+                    <button className="mobile-planner-back" aria-label="返回方案管理" onClick={() => {
                       setMobilePlannerOpen(false);
                       setDrawerSnap(prevDrawerSnapRef.current);
-                    }}>返回</button>
+                    }}>&lt;</button>
                     <div className="mobile-planner-title">
                       <strong>{activeDraft.title}</strong>
                       <small>{activeDraft.planItems.length} 个行程点</small>
@@ -1831,17 +1933,35 @@ export function WorkbenchPage() {
               <p className="page-note">请先进入方案管理并打开一个本地方案，再进行行程编排。</p>
             ) : (
               <>
-                <input
-                  className="draft-title-input"
-                  value={activeDraft.title}
-                  onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
-                />
-                <div className="row-btns">
-                  <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
-                  <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
-                  <p className="page-note">当前 {activeDayCount} 天</p>
-                </div>
-                <p className="page-note">拖入时间轴后，可直接拖动时间段本体调整位置，拖上边缘改开始，拖下边缘改结束。</p>
+                {isMobile ? (
+                  <div className="mobile-schedule-control">
+                    <button className="mobile-plan-card" onClick={() => setPlannerDrawerSnap("full")}>
+                      <span className="mobile-plan-icon" aria-hidden="true" />
+                      <span>{activeDraft.title}</span>
+                      <span className="mobile-plan-chevron">›</span>
+                    </button>
+                    <div className="day-count-stepper">
+                      <span className="day-count-label">行程天数</span>
+                      <button className="day-count-btn" disabled={activeDayCount <= MIN_DAYS} onClick={() => updateDayCount(activeDayCount - 1)}>-</button>
+                      <span className="day-count-value">{activeDayCount} 天</span>
+                      <button className="day-count-btn" disabled={activeDayCount >= MAX_DAYS} onClick={() => updateDayCount(activeDayCount + 1)}>+</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      className="draft-title-input"
+                      value={activeDraft.title}
+                      onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
+                    />
+                    <div className="row-btns">
+                      <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount - 1)}>- 减少天数</button>
+                      <button className="btn btn-sm" onClick={() => updateDayCount(activeDayCount + 1)}>+ 增加天数</button>
+                      <p className="page-note">当前 {activeDayCount} 天</p>
+                    </div>
+                    <p className="page-note">拖入时间轴后，可直接拖动时间段本体调整位置，拖上边缘改开始，拖下边缘改结束。</p>
+                  </>
+                )}
 
                 <div className="timeline-day-switch">
                   <button className="day-arrow" disabled={activeTimelineDay <= 1} onClick={() => setActiveTimelineDay((prev) => Math.max(1, prev - 1))}>
