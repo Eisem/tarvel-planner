@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import {
@@ -38,6 +38,8 @@ type DraftForm = {
   note?: string;
 };
 
+type DrawerSnap = "peek" | "mid" | "full";
+
 const MIN_DAYS = 1;
 const MAX_DAYS = 14;
 const DEFAULT_STOP_MINUTES = 60;
@@ -46,6 +48,8 @@ const MIN_DURATION_MINUTES = 15;
 const SNAP_MINUTES = 15;
 const DAY_MINUTES = 24 * 60;
 const TIMELINE_PIXEL_HEIGHT = 520;
+const DRAWER_SNAP_ORDER: DrawerSnap[] = ["peek", "mid", "full"];
+const DRAWER_DRAG_THRESHOLD = 56;
 
 /* ====== DnD Sub-Components ====== */
 
@@ -290,6 +294,10 @@ export function WorkbenchPage() {
   const [previewShared, setPreviewShared] = useState<{ planId: string; title: string; items: PlanItemDraft[] } | null>(null);
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
   const [isMobile, setIsMobile] = useState(false);
+  const [drawerSnap, setDrawerSnap] = useState<DrawerSnap>("mid");
+  const [drawerDragOffset, setDrawerDragOffset] = useState(0);
+  const [isDrawerDragging, setIsDrawerDragging] = useState(false);
+  const [mobilePlannerOpen, setMobilePlannerOpen] = useState(false);
   const [scheduleExpanded, setScheduleExpanded] = useState(false);
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
@@ -322,6 +330,8 @@ export function WorkbenchPage() {
     color: string;
   }> | undefined;
   const routeCacheRef = useRef<RoutePathsResult>(undefined);
+  const drawerDragRef = useRef<{ pointerId: number; startY: number; startTime: number } | null>(null);
+  const drawerDidDragRef = useRef(false);
   const activeDraft = useMemo(() => drafts.find((d) => d.id === activeDraftId) ?? null, [drafts, activeDraftId]);
   const selectedMarker = useMemo(() => markers.find((marker) => marker.id === selectedMarkerId) ?? null, [markers, selectedMarkerId]);
   const canEditSelectedMarker = useMemo(
@@ -630,6 +640,88 @@ export function WorkbenchPage() {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  useEffect(() => {
+    if (!isMobile) {
+      setMobilePlannerOpen(false);
+    } else {
+      setDrawerSnap("mid");
+      setDrawerDragOffset(0);
+    }
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (createPlanMode || draftForm || poiSearchResults.length > 0) {
+      setDrawerSnap("full");
+    }
+  }, [createPlanMode, draftForm, isMobile, poiSearchResults.length]);
+
+  const drawerStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!isMobile) return undefined;
+    return { "--drawer-drag-offset": `${drawerDragOffset}px` } as CSSProperties;
+  }, [drawerDragOffset, isMobile]);
+
+  function cycleDrawerSnap() {
+    setDrawerSnap((current) => {
+      const nextIndex = (DRAWER_SNAP_ORDER.indexOf(current) + 1) % DRAWER_SNAP_ORDER.length;
+      return DRAWER_SNAP_ORDER[nextIndex];
+    });
+  }
+
+  function moveDrawerSnap(direction: "up" | "down") {
+    setDrawerSnap((current) => {
+      const currentIndex = DRAWER_SNAP_ORDER.indexOf(current);
+      const nextIndex = direction === "up"
+        ? Math.min(DRAWER_SNAP_ORDER.length - 1, currentIndex + 1)
+        : Math.max(0, currentIndex - 1);
+      return DRAWER_SNAP_ORDER[nextIndex];
+    });
+  }
+
+  function handleDrawerPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!isMobile || event.button !== 0) return;
+    drawerDragRef.current = { pointerId: event.pointerId, startY: event.clientY, startTime: Date.now() };
+    drawerDidDragRef.current = false;
+    setIsDrawerDragging(true);
+    setDrawerDragOffset(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleDrawerPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = drawerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const rawOffset = event.clientY - drag.startY;
+    if (Math.abs(rawOffset) > 8) drawerDidDragRef.current = true;
+    setDrawerDragOffset(Math.max(-160, Math.min(160, rawOffset)));
+  }
+
+  function handleDrawerPointerEnd(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = drawerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaY = event.clientY - drag.startY;
+    const elapsed = Math.max(1, Date.now() - drag.startTime);
+    const velocity = deltaY / elapsed;
+    drawerDragRef.current = null;
+    setIsDrawerDragging(false);
+    setDrawerDragOffset(0);
+    if (deltaY < -DRAWER_DRAG_THRESHOLD || velocity < -0.45) {
+      moveDrawerSnap("up");
+    } else if (deltaY > DRAWER_DRAG_THRESHOLD || velocity > 0.45) {
+      moveDrawerSnap("down");
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleDrawerHeaderClick() {
+    if (drawerDidDragRef.current) {
+      drawerDidDragRef.current = false;
+      return;
+    }
+    cycleDrawerSnap();
+  }
+
   function normalizeOrder(items: PlanItemDraft[]) {
     return items
       .slice()
@@ -692,6 +784,9 @@ export function WorkbenchPage() {
     persistDrafts(next);
     setActiveDraftId(draft.id);
     setLeftTab("snapshots");
+    if (isMobile) {
+      setMobilePlannerOpen(true);
+    }
     setMapFitKey((n) => n + 1);
     setSelectedForSnapshot([]);
     setError("");
@@ -776,6 +871,18 @@ export function WorkbenchPage() {
       const others = without.filter((item) => item.dayIndex !== dayIndex);
       return { ...draft, planItems: [...others, ...normalized] };
     });
+  }
+
+  function addMarkerToActiveDay(marker: SnapshotMarker) {
+    if (!activeDraft) return;
+    const dayItems = activeDraft.planItems.filter((p) => p.dayIndex === activeTimelineDay);
+    const lastEnd = dayItems.reduce(
+      (max, p) => Math.max(max, (p.startMinutes ?? DEFAULT_START_MINUTES) + (p.durationMinutes ?? DEFAULT_STOP_MINUTES)),
+      0
+    );
+    const startMinutes = Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, lastEnd);
+    handleDropOnDay(marker.markerId, activeTimelineDay, startMinutes);
+    setToast({ message: `已添加「${marker.placeName}」到第 ${activeTimelineDay} 天`, type: "success" });
   }
 
   function removePlanItem(markerId: string, dayIndex: number) {
@@ -1352,7 +1459,24 @@ export function WorkbenchPage() {
         onDragEnd={handleDragEnd}
       >
         <motion.div className="wb-layout" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
-          <aside className="wb-left">
+          <aside
+            className={`wb-left drawer-${drawerSnap}${isDrawerDragging ? " dragging" : ""}`}
+            style={drawerStyle}
+          >
+            <button
+              type="button"
+              className="drawer-grip-zone"
+              onPointerDown={handleDrawerPointerDown}
+              onPointerMove={handleDrawerPointerMove}
+              onPointerUp={handleDrawerPointerEnd}
+              onPointerCancel={handleDrawerPointerEnd}
+              onClick={handleDrawerHeaderClick}
+              aria-label="切换地点与方案抽屉高度"
+            >
+              <span className="drawer-grip" />
+              <span className="drawer-title">{createPlanMode ? "创建方案" : leftTab === "markers" ? "地点池" : "方案管理"}</span>
+              <span className="drawer-state">{drawerSnap === "peek" ? "展开" : drawerSnap === "mid" ? "全屏" : "收起"}</span>
+            </button>
             {createPlanMode ? (
               <div className="wb-panel create-plan-panel">
                 <div className="create-plan-header">
@@ -1509,7 +1633,11 @@ export function WorkbenchPage() {
                   <div className="draft-cards">
                     {drafts.map((draft) => (
                       <article key={draft.id} className={activeDraftId === draft.id ? "draft-card active" : "draft-card"}>
-                        <button className="draft-open" onClick={() => { setActiveDraftId(draft.id); setMapFitKey((n) => n + 1); }}>
+                        <button className="draft-open" onClick={() => {
+                          setActiveDraftId(draft.id);
+                          setMapFitKey((n) => n + 1);
+                          if (isMobile) setMobilePlannerOpen(true);
+                        }}>
                           <strong>{draft.title}</strong>
                           <small>{draft.planItems.length} 个行程点</small>
                         </button>
@@ -1552,16 +1680,7 @@ export function WorkbenchPage() {
                               <DraggablePlaceItem
                                 markerId={marker.markerId}
                                 placeName={marker.placeName}
-                                onLongPress={() => {
-                                  const dayItems = activeDraft.planItems.filter((p) => p.dayIndex === activeTimelineDay);
-                                  const lastEnd = dayItems.reduce(
-                                    (max, p) => Math.max(max, (p.startMinutes ?? DEFAULT_START_MINUTES) + (p.durationMinutes ?? DEFAULT_STOP_MINUTES)),
-                                    0
-                                  );
-                                  const startMinutes = Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, lastEnd);
-                                  handleDropOnDay(marker.markerId, activeTimelineDay, startMinutes);
-                                  setToast({ message: `已添加「${marker.placeName}」到第 ${activeTimelineDay} 天`, type: "success" });
-                                }}
+                                onLongPress={() => addMarkerToActiveDay(marker)}
                               />
                             </li>
                           ))}
@@ -1572,16 +1691,17 @@ export function WorkbenchPage() {
                 </div>
               </div>
           )}
-          {!isMobile ? (
+          <>
             <button className="create-plan-btn" onClick={() => {
               setCreatePlanMode(true);
               setSelectedForSnapshot([]);
               setDraftForm(null);
               setError("");
+              if (isMobile) setDrawerSnap("full");
             }}>
               + 创建方案
             </button>
-          ) : null}
+          </>
         </>
       )}
         </aside>
@@ -1650,8 +1770,17 @@ export function WorkbenchPage() {
             />
           </main>
 
-          <aside className={`wb-right${scheduleExpanded ? " expanded" : ""}`}>
-            {isMobile && leftTab === "markers" ? (
+          <aside className={`wb-right${scheduleExpanded ? " expanded" : ""}${mobilePlannerOpen ? " mobile-planner-open" : ""}`}>
+            {isMobile && mobilePlannerOpen && activeDraft ? (
+              <div className="mobile-planner-header">
+                <button className="btn btn-sm" onClick={() => setMobilePlannerOpen(false)}>返回</button>
+                <div className="mobile-planner-title">
+                  <strong>{activeDraft.title}</strong>
+                  <small>{activeDraft.planItems.length} 个行程点</small>
+                </div>
+              </div>
+            ) : null}
+            {false && isMobile && leftTab === "markers" ? (
               <button className="create-plan-btn mobile-create-in-right" onClick={() => {
                 setCreatePlanMode(true);
                 setSelectedForSnapshot([]);
@@ -1777,6 +1906,29 @@ export function WorkbenchPage() {
                   <button className="btn btn-primary" onClick={pushDraftToRoom}>推送给其他用户查看</button>
                   <button className="btn" onClick={() => deleteDraft(activeDraft.id)}>删除当前草稿</button>
                 </div>
+                {isMobile ? (
+                  <section className="mobile-place-bank">
+                    <div className="row-btns">
+                      <h4>地点列表（长按添加到第 {activeTimelineDay} 天）</h4>
+                      <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
+                        {placeListExpanded ? "收起" : "展开"}
+                      </button>
+                    </div>
+                    {placeListExpanded ? (
+                      <ul className="planner-place-list">
+                        {activeDraftMarkerList.map((marker) => (
+                          <li key={marker.markerId}>
+                            <DraggablePlaceItem
+                              markerId={marker.markerId}
+                              placeName={marker.placeName}
+                              onLongPress={() => addMarkerToActiveDay(marker)}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </section>
+                ) : null}
               </>
             )}
             </>
