@@ -138,7 +138,7 @@ app.patch("/api/v1/markers/:markerId", async (req, res) => {
   try {
     const marker = await getMarkerById(req.params.markerId);
     if (!marker) return res.status(404).json(fail("MARKER_NOT_FOUND", "marker not found"));
-    const parsed = z.object({ placeName: z.string().optional(), budget: z.number().optional(), purpose: z.string().optional(), expectedDurationMinutes: z.number().optional(), priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(), note: z.string().optional(), lng: z.number().optional(), lat: z.number().optional(), poiId: z.string().optional(), address: z.string().optional() }).safeParse(req.body);
+    const parsed = z.object({ placeName: z.string().optional(), budget: z.number().nullable().optional(), purpose: z.string().optional(), expectedDurationMinutes: z.number().optional(), priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(), note: z.string().optional(), lng: z.number().optional(), lat: z.number().optional(), poiId: z.string().optional(), address: z.string().optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json(fail("VALIDATION_ERROR", parsed.error.message));
     const updated = await updateMarker(req.params.markerId, parsed.data);
     const room = await prisma.room.findUnique({ where: { id: marker.roomId } });

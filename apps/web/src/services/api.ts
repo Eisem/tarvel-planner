@@ -25,7 +25,7 @@ export type MarkerRow = {
   lng: number;
   lat: number;
   note?: string;
-  budget?: number;
+  budget?: number | null;
 };
 
 export type PlanRow = {
@@ -99,7 +99,7 @@ export const api = {
   },
   updateMarker(markerId: string, payload: {
     placeName?: string;
-    budget?: number;
+    budget?: number | null;
     note?: string;
     lng?: number;
     lat?: number;

@@ -34,7 +34,7 @@ type DraftForm = {
   lat: number;
   address?: string;
   poiId?: string;
-  budget?: number;
+  budget?: number | null;
   note?: string;
 };
 
@@ -50,6 +50,15 @@ const SNAP_MINUTES = 15;
 const DAY_MINUTES = 24 * 60;
 const TIMELINE_PIXEL_HEIGHT = 520;
 const DRAWER_DRAG_THRESHOLD = 4;
+const BUDGET_PENDING_LABEL = "待定";
+
+function formatBudget(value?: number | null) {
+  return value === undefined || value === null ? BUDGET_PENDING_LABEL : String(value);
+}
+
+function formatBudgetMoney(value?: number | null) {
+  return value === undefined || value === null ? BUDGET_PENDING_LABEL : `¥${value}`;
+}
 
 function useDrawerDrag(snap: DrawerSnap, onSnapChange: (s: DrawerSnap) => void) {
   const [isDragging, setIsDragging] = useState(false);
@@ -189,7 +198,7 @@ function MarkerCard({
           </label>
           <div className="marker-check-meta">
             <small>创建者：{marker.creatorNickname ?? "未知"}</small>
-            <small>预算：{marker.budget ?? 0}</small>
+            <small>预算：{formatBudget(marker.budget)}</small>
           </div>
           {marker.note ? (
             <small className="marker-check-note">备注：{marker.note}</small>
@@ -204,7 +213,7 @@ function MarkerCard({
           onClick={() => onSelect?.(marker.id)}
         >
           <strong>{marker.placeName}</strong>
-          <span>预算：{marker.budget ?? 0}</span>
+          <span>预算：{formatBudget(marker.budget)}</span>
           <span>创建者：{marker.creatorNickname ?? "未知"}</span>
           {marker.note ? <small>备注：{marker.note}</small> : null}
         </div>
@@ -452,7 +461,7 @@ export function WorkbenchPage() {
         placeName: marker.placeName,
         lng: marker.lng,
         lat: marker.lat,
-        budget: marker.budget,
+        budget: marker.budget ?? undefined,
         note: marker.note
       }));
   }, [activeDraft, markers, activeDraftMarkerIds]);
@@ -467,7 +476,7 @@ export function WorkbenchPage() {
     return map;
   }, [markers, activeDraft]);
   const markerMetaById = useMemo(() => {
-    const map = new Map<string, { budget?: number; note?: string; creatorNickname?: string }>();
+    const map = new Map<string, { budget?: number | null; note?: string; creatorNickname?: string }>();
     markers.forEach((marker) => {
       map.set(marker.id, {
         budget: marker.budget,
@@ -828,7 +837,7 @@ export function WorkbenchPage() {
       placeName: marker.placeName,
       lng: marker.lng,
       lat: marker.lat,
-      budget: marker.budget,
+      budget: marker.budget ?? undefined,
       note: marker.note
     }));
     draft.planItems = [];
@@ -1245,7 +1254,7 @@ export function WorkbenchPage() {
           lat: draftForm.lat,
           address: draftForm.address,
           poiId: draftForm.poiId,
-          budget: draftForm.budget ?? undefined,
+          budget: draftForm.budget ?? null,
           note: draftForm.note
         });
       } else {
@@ -1357,7 +1366,7 @@ export function WorkbenchPage() {
           lat: snapshot.lat,
           address: snapshot.address ?? undefined,
           poiId: snapshot.poiId ?? undefined,
-          budget: snapshot.budget ?? 0,
+          budget: snapshot.budget ?? undefined,
           note: snapshot.note ?? undefined
         });
         markerIdMap.set(item.markerId, (recreated as { id: string }).id);
@@ -1616,7 +1625,7 @@ export function WorkbenchPage() {
               <div className="wb-panel marker-pool-panel">
                 <div className="wb-search-row">
                   <div className="search-input-wrap">
-                    <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：紫禁城" />
+                    <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：天安门" />
                     {(searchKeyword || poiSearchResults.length > 0) ? (
                       <button className="search-clear" onClick={() => { setSearchKeyword(""); setPoiSearchResults([]); setPoiPreview(null); }}>×</button>
                     ) : null}
@@ -1663,7 +1672,11 @@ export function WorkbenchPage() {
                     <h4>{selectedMarker ? "编辑地点" : "创建新地点"}</h4>
                     <div className="draft-grid">
                       <label><span>地点名称</span><input value={draftForm.placeName} onChange={(event) => setDraftForm({ ...draftForm, placeName: event.target.value })} /></label>
-                      <label><span>预算（可选）</span><input type="number" min="0" max="999999" step="1" value={draftForm.budget ?? 0} onChange={(event) => {
+                      <label><span>预算（可选）</span><input type="number" min="0" max="999999" step="1" value={draftForm.budget ?? ""} onChange={(event) => {
+                        if (event.target.value === "") {
+                          setDraftForm({ ...draftForm, budget: undefined });
+                          return;
+                        }
                         const v = Number(event.target.value);
                         if (isNaN(v)) return;
                         const clamped = Math.max(0, Math.min(999999, Math.round(v)));
@@ -2066,7 +2079,7 @@ export function WorkbenchPage() {
                           <small>{formatMinutes(entry.start)}-{formatMinutes(entry.end)}</small>
                           {(() => {
                             const meta = markerMetaById.get(item.markerId);
-                            const budgetText = meta?.budget !== undefined ? `¥${meta.budget}` : "-";
+                            const budgetText = formatBudgetMoney(meta?.budget);
                             const creatorText = meta?.creatorNickname ?? "未知";
                             const noteText = (meta?.note ?? "").trim();
                             const key = noteKey(activeTimelineDay, item.markerId);

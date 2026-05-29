@@ -84,6 +84,10 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
     return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  function formatBudget(value?: number | null) {
+    return value === undefined || value === null ? "待定" : String(value);
+  }
+
   function renderInfoWindow(row: MarkerRow) {
     const map = mapInstanceRef.current;
     const mk = makerRef.current.get(row.id);
@@ -94,7 +98,7 @@ export function MapCanvas({ markers, draftMarker, draftMarkerColor, allowCreateM
     infoWindowRef.current.setContent(`
       <div style="min-width:200px;padding:2px 0;line-height:1.5;">
         <div style="font-weight:700;margin-bottom:4px;">${escapeText(row.placeName)}</div>
-        <div>预算：${escapeText(row.budget)}</div>
+        <div>预算：${escapeText(formatBudget(row.budget))}</div>
         <div>备注：${escapeText(row.note)}</div>
         <div>坐标：${row.lng.toFixed(5)}, ${row.lat.toFixed(5)}</div>
       </div>

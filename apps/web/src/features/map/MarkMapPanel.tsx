@@ -9,7 +9,7 @@ type Draft = {
   lat: number;
   address?: string;
   poiId?: string;
-  budget?: number;
+  budget?: number | null;
   note?: string;
 };
 
@@ -27,7 +27,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   const [searchKeyword, setSearchKeyword] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [markers, setMarkers] = useState<Array<{ id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number }>>([]);
+  const [markers, setMarkers] = useState<Array<{ id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number | null }>>([]);
   const [selectedMarkerId, setSelectedMarkerId] = useState("");
 
   const canSave = useMemo(() => Boolean(roomId && memberId && draft?.placeName?.trim()), [roomId, memberId, draft?.placeName]);
@@ -42,7 +42,11 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
       .replace(/'/g, "&#39;");
   }
 
-  function openMarkerInfo(row: { id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number }) {
+  function formatBudget(value?: number | null) {
+    return value === undefined || value === null ? "待定" : String(value);
+  }
+
+  function openMarkerInfo(row: { id: string; placeName: string; lng: number; lat: number; note?: string; budget?: number | null }) {
     const map = mapInstanceRef.current;
     const markerObj = markerByIdRef.current[row.id];
     const AMap = (window as any).AMap;
@@ -55,7 +59,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
     const content = `
       <div style="min-width:200px;padding:2px 0;line-height:1.5;">
         <div style="font-weight:700;margin-bottom:4px;">${escapeText(row.placeName)}</div>
-        <div>预算：${escapeText(row.budget)}</div>
+        <div>预算：${escapeText(formatBudget(row.budget))}</div>
         <div>备注：${escapeText(row.note)}</div>
         <div>坐标：${row.lng.toFixed(5)}, ${row.lat.toFixed(5)}</div>
       </div>
@@ -189,7 +193,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
         lat: draft.lat,
         address: draft.address,
         poiId: draft.poiId,
-        budget: draft.budget,
+        budget: draft.budget ?? undefined,
         note: draft.note
       });
       await refreshMarkers(roomId);
@@ -205,7 +209,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
   return (
     <div className="amap-panel">
       <div className="amap-toolbar">
-        <input value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} placeholder="搜索地点，如：紫禁城" />
+        <input value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} placeholder="搜索地点，如：天安门" />
         <button className="btn" onClick={searchPoi}>搜索地点</button>
       </div>
       {!memberId ? <p className="error-text">当前链接缺少成员信息，建议从首页重新进入房间。</p> : null}
@@ -233,7 +237,7 @@ export function MarkMapPanel({ roomCode, memberId }: { roomCode: string; memberI
                     }}
                   >
                     <strong>{row.placeName}</strong>
-                    <span>预算：{row.budget ?? "-"}</span>
+                    <span>预算：{formatBudget(row.budget)}</span>
                     <small>{row.lng.toFixed(4)}, {row.lat.toFixed(4)}</small>
                   </button>
                 </li>

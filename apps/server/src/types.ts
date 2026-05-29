@@ -33,7 +33,7 @@ export interface Marker {
   lng: number;
   lat: number;
   address?: string;
-  budget?: number;
+  budget?: number | null;
   purpose?: string;
   expectedDurationMinutes?: number;
   priority: Priority;
