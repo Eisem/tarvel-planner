@@ -1663,7 +1663,7 @@ export function WorkbenchPage() {
               </button>
             ) : (
               <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="schedule-header-row">
               <h4>行程编排</h4>
               {isMobile && activeDraft ? (
                 <button className="schedule-expand-btn" onClick={() => setScheduleExpanded((v) => !v)} title={scheduleExpanded ? "收起" : "展开全屏"}>
