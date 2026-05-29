@@ -146,19 +146,44 @@ function DraggableMarkerCard({ marker, ...rest }: Omit<MarkerCardProps, "dragRef
   );
 }
 
-function DraggablePlaceItem({ markerId, placeName }: { markerId: string; placeName: string }) {
+function DraggablePlaceItem({ markerId, placeName, onLongPress }: { markerId: string; placeName: string; onLongPress?: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `place-${markerId}`,
     data: { markerId, placeName },
   });
+
+  const [pressing, setPressing] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function startPress() {
+    setPressing(true);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setPressing(false);
+      onLongPress?.();
+    }, 600);
+  }
+
+  function cancelPress() {
+    setPressing(false);
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
 
   return (
     <button
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className="planner-place-item"
+      className={`planner-place-item${pressing ? " pressing" : ""}`}
       style={{ opacity: isDragging ? 0.3 : 1 }}
+      onContextMenu={(e) => { e.preventDefault(); onLongPress?.(); }}
+      onTouchStart={() => startPress()}
+      onTouchMove={() => cancelPress()}
+      onTouchEnd={() => cancelPress()}
+      onTouchCancel={() => cancelPress()}
     >
       <span className="drag-chip">DRAG</span>
       <strong>{placeName}</strong>
@@ -264,6 +289,8 @@ export function WorkbenchPage() {
   const [sharedPlans, setSharedPlans] = useState<Array<{ id: string; title: string; creatorMemberId: string }>>([]);
   const [previewShared, setPreviewShared] = useState<{ planId: string; title: string; items: PlanItemDraft[] } | null>(null);
   const [leftTab, setLeftTab] = useState<"markers" | "snapshots">("markers");
+  const [isMobile, setIsMobile] = useState(false);
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
   const [createPlanMode, setCreatePlanMode] = useState(false);
@@ -594,6 +621,14 @@ export function WorkbenchPage() {
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1080px)");
+    setIsMobile(mq.matches);
+    function onChange(e: MediaQueryListEvent) { setIsMobile(e.matches); }
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   function normalizeOrder(items: PlanItemDraft[]) {
     return items
@@ -1503,7 +1538,7 @@ export function WorkbenchPage() {
                   {activeDraft ? (
                     <div className="snapshot-place-bank">
                       <div className="row-btns">
-                        <h4>地点列表（拖到右侧行程）</h4>
+                        <h4>地点列表（{isMobile ? "长按地点添加到本日行程" : "拖到右侧行程"}）</h4>
                         <button className="btn btn-sm" onClick={() => setPlaceListExpanded((prev) => !prev)}>
                           {placeListExpanded ? "收起" : "展开"}
                         </button>
@@ -1512,7 +1547,20 @@ export function WorkbenchPage() {
                         <ul className="planner-place-list">
                           {activeDraftMarkerList.map((marker) => (
                             <li key={marker.markerId}>
-                              <DraggablePlaceItem markerId={marker.markerId} placeName={marker.placeName} />
+                              <DraggablePlaceItem
+                                markerId={marker.markerId}
+                                placeName={marker.placeName}
+                                onLongPress={() => {
+                                  const dayItems = activeDraft.planItems.filter((p) => p.dayIndex === activeTimelineDay);
+                                  const lastEnd = dayItems.reduce(
+                                    (max, p) => Math.max(max, (p.startMinutes ?? DEFAULT_START_MINUTES) + (p.durationMinutes ?? DEFAULT_STOP_MINUTES)),
+                                    0
+                                  );
+                                  const startMinutes = Math.min(DAY_MINUTES - MIN_DURATION_MINUTES, lastEnd);
+                                  handleDropOnDay(marker.markerId, activeTimelineDay, startMinutes);
+                                  setToast({ message: `已添加「${marker.placeName}」到第 ${activeTimelineDay} 天`, type: "success" });
+                                }}
+                              />
                             </li>
                           ))}
                         </ul>
@@ -1522,14 +1570,16 @@ export function WorkbenchPage() {
                 </div>
               </div>
           )}
-          <button className="create-plan-btn" onClick={() => {
-            setCreatePlanMode(true);
-            setSelectedForSnapshot([]);
-            setDraftForm(null);
-            setError("");
-          }}>
-            + 创建方案
-          </button>
+          {!isMobile ? (
+            <button className="create-plan-btn" onClick={() => {
+              setCreatePlanMode(true);
+              setSelectedForSnapshot([]);
+              setDraftForm(null);
+              setError("");
+            }}>
+              + 创建方案
+            </button>
+          ) : null}
         </>
       )}
         </aside>
@@ -1598,8 +1648,32 @@ export function WorkbenchPage() {
             />
           </main>
 
-          <aside className="wb-right">
-            <h4>行程编排</h4>
+          <aside className={`wb-right${scheduleExpanded ? " expanded" : ""}`}>
+            {isMobile && leftTab === "markers" ? (
+              <button className="create-plan-btn mobile-create-in-right" onClick={() => {
+                setCreatePlanMode(true);
+                setSelectedForSnapshot([]);
+                setDraftForm(null);
+                setError("");
+              }}>
+                + 创建方案
+              </button>
+            ) : (
+              <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h4>行程编排</h4>
+              {isMobile && activeDraft ? (
+                <button className="schedule-expand-btn" onClick={() => setScheduleExpanded((v) => !v)} title={scheduleExpanded ? "收起" : "展开全屏"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {scheduleExpanded ? (
+                      <path d="M18 15l-6-6-6 6" />
+                    ) : (
+                      <path d="M6 9l6 6 6-6" />
+                    )}
+                  </svg>
+                </button>
+              ) : null}
+            </div>
             {leftTab !== "snapshots" || !activeDraft ? (
               <p className="page-note">请先进入方案管理并打开一个本地方案，再进行行程编排。</p>
             ) : (
@@ -1703,7 +1777,10 @@ export function WorkbenchPage() {
                 </div>
               </>
             )}
+            </>
+            )}
           </aside>
+          {scheduleExpanded ? <div className="schedule-expand-backdrop" onClick={() => setScheduleExpanded(false)} /> : null}
         </motion.div>
 
         <DragOverlay dropAnimation={null}>

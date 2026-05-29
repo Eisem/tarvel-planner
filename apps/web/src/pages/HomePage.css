@@ -391,21 +391,125 @@
   .top-nav {
     flex-wrap: wrap;
     justify-content: flex-start;
+    padding: 12px 16px;
   }
 
-  .map-preview {
-    min-height: 360px;
+  .brand {
+    font-size: 20px;
   }
 
-  .place-card {
-    width: 220px;
+  .home-shell {
+    padding: 6px 14px 32px;
   }
 
-  .action-text h4 {
-    font-size: 29px;
+  .hero-copy h1 {
+    font-size: clamp(24px, 6vw, 36px);
+    line-height: 1.22;
   }
 
   .sub {
-    font-size: 19px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 8px 14px;
+  }
+
+  .map-preview {
+    min-height: 300px;
+    border-radius: 22px;
+  }
+
+  .place-card {
+    width: 190px;
+    padding: 8px 10px;
+    gap: 8px;
+    border-radius: 14px;
+  }
+
+  .place-avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .place-card p {
+    font-size: 12px;
+  }
+
+  .place-card small {
+    font-size: 10px;
+  }
+
+  .place-top { top: 16px; right: 10px; }
+  .place-mid { top: 120px; left: 8px; }
+  .place-bottom { right: 10px; bottom: 12px; }
+
+  .feature-card {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .feature-card h3 {
+    font-size: 20px;
+  }
+
+  .feature-card p {
+    font-size: 13px;
+  }
+
+  .action-text h4 {
+    font-size: clamp(22px, 5vw, 29px);
+  }
+
+  .action-text p {
+    font-size: 12px;
+    margin-top: 6px;
+  }
+
+  .action-card {
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .action-art {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
+  }
+
+  .action-art svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .arrow {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  .home-modal-card {
+    width: calc(100vw - 48px);
+    max-width: 400px;
+    padding: 22px;
+    gap: 10px;
+    border-radius: 20px;
+  }
+
+  .home-modal-card h2 {
+    font-size: 18px;
+  }
+
+  .home-modal-card input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .home-modal-submit {
+    min-height: 44px;
+    padding: 12px;
+    font-size: 15px;
   }
 }
