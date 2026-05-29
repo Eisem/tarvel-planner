@@ -2140,6 +2140,18 @@ input:focus {
     -webkit-overflow-scrolling: touch;
   }
 
+  .wb-left .marker-pool-panel {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
+  }
+
+  .wb-left .marker-pool-panel .wb-panel-scroll {
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
   .create-plan-btn.mobile-create-in-right {
     display: none;
     margin: auto 8px 8px;

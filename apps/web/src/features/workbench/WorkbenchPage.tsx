@@ -1584,7 +1584,7 @@ export function WorkbenchPage() {
             </div>
 
             {leftTab === "markers" ? (
-              <div className="wb-panel">
+              <div className="wb-panel marker-pool-panel">
                 <div className="wb-search-row">
                   <div className="search-input-wrap">
                     <input value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="搜索地点，如：紫禁城" />
