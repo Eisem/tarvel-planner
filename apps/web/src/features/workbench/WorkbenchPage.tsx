@@ -1036,13 +1036,12 @@ export function WorkbenchPage() {
       setError("");
       if (selectedMarkerId && markers.some((m) => m.id === selectedMarkerId && m.creatorNickname === memberNickname)) {
         await api.updateMarker(selectedMarkerId, {
-          memberId,
           placeName: draftForm.placeName.trim(),
           lng: draftForm.lng,
           lat: draftForm.lat,
           address: draftForm.address,
           poiId: draftForm.poiId,
-          budget: draftForm.budget,
+          budget: draftForm.budget ?? undefined,
           note: draftForm.note
         });
       } else {
@@ -1053,7 +1052,7 @@ export function WorkbenchPage() {
           lat: draftForm.lat,
           address: draftForm.address,
           poiId: draftForm.poiId,
-          budget: draftForm.budget,
+          budget: draftForm.budget ?? undefined,
           note: draftForm.note
         });
       }

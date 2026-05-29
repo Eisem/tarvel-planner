@@ -5,13 +5,14 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...init
   });
-  if (!response.ok && !response.headers.get("content-type")?.includes("application/json")) {
-    throw new Error("服务器异常，请稍后重试");
+  if (!response.ok) {
+    const body = await response.text();
+    console.error(`API ${response.status} ${init?.method ?? "GET"} ${path}:`, body);
+    let message = "request failed";
+    try { message = JSON.parse(body).message ?? message; } catch { /* body is not JSON */ }
+    throw new Error(message);
   }
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message ?? "request failed");
-  }
   return data.data as T;
 }
 
@@ -97,7 +98,6 @@ export const api = {
     });
   },
   updateMarker(markerId: string, payload: {
-    memberId: string;
     placeName?: string;
     budget?: number;
     note?: string;
