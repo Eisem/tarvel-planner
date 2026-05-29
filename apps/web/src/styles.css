@@ -2406,7 +2406,7 @@ input:focus {
     background: #fff;
     color: #0f2745;
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr) 20px;
+    grid-template-columns: 28px minmax(0, 1fr) 34px;
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
@@ -2415,7 +2415,7 @@ input:focus {
     text-align: left;
   }
 
-  .mobile-plan-card span:nth-child(2) {
+  .mobile-plan-card > span:nth-child(2) {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2453,10 +2453,45 @@ input:focus {
     border-radius: 2px;
   }
 
-  .mobile-plan-chevron {
-    color: #587395;
-    font-size: 26px;
-    line-height: 1;
+  .mobile-plan-title-input {
+    min-width: 0;
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid #bfd3ee;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #0f2745;
+    font: inherit;
+    font-weight: 800;
+    padding: 8px 10px;
+    outline: none;
+  }
+
+  .mobile-plan-title-input:focus {
+    border-color: #2f6ad2;
+    box-shadow: 0 0 0 3px rgba(47, 106, 210, 0.16);
+  }
+
+  .mobile-plan-edit {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #cbdcf1;
+    border-radius: 10px;
+    background: #f5f9ff;
+    color: #2f6ad2;
+    display: grid;
+    place-content: center;
+    justify-self: end;
+    margin-right: 2px;
+    cursor: pointer;
+  }
+
+  .mobile-plan-edit svg {
+    display: block;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .day-count-label {

@@ -389,6 +389,8 @@ export function WorkbenchPage() {
   const [mobilePlannerOpen, setMobilePlannerOpen] = useState(false);
   const [mobilePreviewDraftId, setMobilePreviewDraftId] = useState("");
   const [mobilePreviewDay, setMobilePreviewDay] = useState<MobilePreviewDay>("all");
+  const [mobileTitleEditing, setMobileTitleEditing] = useState(false);
+  const [mobileTitleBeforeEdit, setMobileTitleBeforeEdit] = useState("");
   const prevDrawerSnapRef = useRef<DrawerSnap>("mid");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
@@ -414,6 +416,7 @@ export function WorkbenchPage() {
 
   const mapInstanceRef = useRef<unknown>(null);
   const mapCacheRef = useRef<object[]>([]);
+  const mobileTitleInputRef = useRef<HTMLInputElement | null>(null);
   type RoutePathsResult = Array<{
     dayIndex: number;
     path: [number, number][];
@@ -758,8 +761,17 @@ export function WorkbenchPage() {
   useEffect(() => {
     if (!isMobile) {
       setMobilePlannerOpen(false);
+      setMobileTitleEditing(false);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    if (!mobileTitleEditing) return;
+    requestAnimationFrame(() => {
+      mobileTitleInputRef.current?.focus();
+      mobileTitleInputRef.current?.select();
+    });
+  }, [mobileTitleEditing]);
 
   
   function normalizeOrder(items: PlanItemDraft[]) {
@@ -840,6 +852,23 @@ export function WorkbenchPage() {
     const updated = mutator({ ...activeDraft, updatedAt: new Date().toISOString() });
     const next = drafts.map((draft) => (draft.id === updated.id ? updated : draft));
     persistDrafts(next);
+  }
+
+  function startMobileTitleEdit() {
+    if (!activeDraft) return;
+    setMobileTitleBeforeEdit(activeDraft.title);
+    setMobileTitleEditing(true);
+  }
+
+  function finishMobileTitleEdit(restore = false) {
+    if (!activeDraft) return;
+    const nextTitle = restore ? mobileTitleBeforeEdit : activeDraft.title.trim();
+    if (restore || !nextTitle) {
+      updateActiveDraft((draft) => ({ ...draft, title: mobileTitleBeforeEdit || draft.title }));
+    } else if (nextTitle !== activeDraft.title) {
+      updateActiveDraft((draft) => ({ ...draft, title: nextTitle }));
+    }
+    setMobileTitleEditing(false);
   }
 
   function deleteDraft(id: string) {
@@ -1935,11 +1964,36 @@ export function WorkbenchPage() {
               <>
                 {isMobile ? (
                   <div className="mobile-schedule-control">
-                    <button className="mobile-plan-card" onClick={() => setPlannerDrawerSnap("full")}>
+                    <div className="mobile-plan-card">
                       <span className="mobile-plan-icon" aria-hidden="true" />
-                      <span>{activeDraft.title}</span>
-                      <span className="mobile-plan-chevron">›</span>
-                    </button>
+                      {mobileTitleEditing ? (
+                        <input
+                          ref={mobileTitleInputRef}
+                          className="mobile-plan-title-input"
+                          value={activeDraft.title}
+                          onChange={(event) => updateActiveDraft((draft) => ({ ...draft, title: event.target.value }))}
+                          onBlur={() => finishMobileTitleEdit(false)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              finishMobileTitleEdit(false);
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              finishMobileTitleEdit(true);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span>{activeDraft.title}</span>
+                      )}
+                      <button className="mobile-plan-edit" aria-label="编辑方案名称" onClick={startMobileTitleEdit}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+                          <path d="m15 5 4 4" />
+                        </svg>
+                      </button>
+                    </div>
                     <div className="day-count-stepper">
                       <span className="day-count-label">行程天数</span>
                       <button className="day-count-btn" disabled={activeDayCount <= MIN_DAYS} onClick={() => updateDayCount(activeDayCount - 1)}>-</button>
