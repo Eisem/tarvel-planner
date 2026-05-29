@@ -51,6 +51,28 @@ const DAY_MINUTES = 24 * 60;
 const TIMELINE_PIXEL_HEIGHT = 520;
 const DRAWER_DRAG_THRESHOLD = 4;
 const BUDGET_PENDING_LABEL = "待定";
+const ONBOARDING_STEPS = [
+  {
+    title: "欢迎使用 Trip Planner",
+    description: "这是一个多人协作旅行规划工具，围绕地图、标点、排程、投票完成行程设计"
+  },
+  {
+    title: "地图标点",
+    description: "搜索或点击地图添加地点，所有成员地图共享，实时可见"
+  },
+  {
+    title: "方案管理",
+    description: "标点后点击创建方案，选取地点，保存草稿"
+  },
+  {
+    title: "行程编排",
+    description: "拖拽（长按）地点添加到时间轴，调整时间和顺序，按天规划路线，推送方案到共享列表"
+  },
+  {
+    title: "投票定稿",
+    description: "右上角进入共享方案列表，团队成员投票选出最佳方案。"
+  }
+];
 
 function formatBudget(value?: number | null) {
   return value === undefined || value === null ? BUDGET_PENDING_LABEL : String(value);
@@ -400,6 +422,8 @@ export function WorkbenchPage() {
   const [mobilePreviewDay, setMobilePreviewDay] = useState<MobilePreviewDay>("all");
   const [mobileTitleEditing, setMobileTitleEditing] = useState(false);
   const [mobileTitleBeforeEdit, setMobileTitleBeforeEdit] = useState("");
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
   const prevDrawerSnapRef = useRef<DrawerSnap>("mid");
   const [placeListExpanded, setPlaceListExpanded] = useState(true);
   const [overDayIndex, setOverDayIndex] = useState<number | null>(null);
@@ -760,6 +784,14 @@ export function WorkbenchPage() {
   }, [toast]);
 
   useEffect(() => {
+    if (!roomCode || !memberId) return;
+    const key = `tp_onboarding_${roomCode}_${memberId}`;
+    if (localStorage.getItem(key) === "done") return;
+    setOnboardingStepIndex(0);
+    setShowOnboarding(true);
+  }, [roomCode, memberId]);
+
+  useEffect(() => {
     const mq = window.matchMedia("(max-width: 1080px)");
     setIsMobile(mq.matches);
     function onChange(e: MediaQueryListEvent) { setIsMobile(e.matches); }
@@ -803,6 +835,21 @@ export function WorkbenchPage() {
     const hours = Math.floor(normalized / 60);
     const minutes = normalized % 60;
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  function closeOnboarding() {
+    if (roomCode && memberId) {
+      localStorage.setItem(`tp_onboarding_${roomCode}_${memberId}`, "done");
+    }
+    setShowOnboarding(false);
+  }
+
+  function handleOnboardingNext() {
+    if (onboardingStepIndex >= ONBOARDING_STEPS.length - 1) {
+      closeOnboarding();
+      return;
+    }
+    setOnboardingStepIndex((prev) => Math.min(ONBOARDING_STEPS.length - 1, prev + 1));
   }
 
   function noteKey(dayIndex: number, markerId: string) {
@@ -2171,6 +2218,29 @@ export function WorkbenchPage() {
           </div>
         </div>
       )}
+
+      {showOnboarding ? (
+        <div className="tutorial-overlay" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+          <section className="tutorial-card">
+            <div className="tutorial-step">
+              第 {onboardingStepIndex + 1} / {ONBOARDING_STEPS.length} 页
+            </div>
+            <h2 id="tutorial-title">{ONBOARDING_STEPS[onboardingStepIndex].title}</h2>
+            <p>{ONBOARDING_STEPS[onboardingStepIndex].description}</p>
+            <div className="tutorial-dots" aria-hidden="true">
+              {ONBOARDING_STEPS.map((_, index) => (
+                <span key={index} className={index === onboardingStepIndex ? "active" : ""} />
+              ))}
+            </div>
+            <div className="tutorial-actions">
+              <button className="btn btn-sm" onClick={closeOnboarding}>跳过</button>
+              <button className="btn btn-primary btn-sm" onClick={handleOnboardingNext}>
+                {onboardingStepIndex === ONBOARDING_STEPS.length - 1 ? "开始使用" : "下一步"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
